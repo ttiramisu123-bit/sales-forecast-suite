@@ -952,6 +952,14 @@ function renderSkuDetailPanel(row) {
   </div>`;
 }
 
+function renderSkuDetailTableRow(row, colspan) {
+  return `<tr class="sku-detail-row" data-detail-row="${escapeHtml(row.sku)}">
+    <td colspan="${colspan}">
+      ${renderSkuDetailPanel(row)}
+    </td>
+  </tr>`;
+}
+
 function saveSkuRowEdit(sku) {
   const tr = [...els.skuTableBody.querySelectorAll("tr[data-row-sku]")].find((item) => item.dataset.rowSku === sku);
   if (!tr) return;
@@ -1038,7 +1046,7 @@ renderSkuTable = function renderSkuTableInlineEditor() {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   state.page = Math.min(Math.max(1, state.page), totalPages);
   const pageRows = rows.slice((state.page - 1) * pageSize, state.page * pageSize);
-  const detailRow = pageRows.find((row) => row.sku === state.detailSku);
+  const totalColumns = 7 + state.months.length;
 
   els.skuTableHead.innerHTML = `<tr>
     <th class="sticky-col sticky-sku">SKU</th>
@@ -1076,11 +1084,13 @@ renderSkuTable = function renderSkuTableInlineEditor() {
       ${noteCell}
       <td class="row-actions">${actionCell}</td>
     </tr>`;
-    return mainRow;
+    return mainRow + (state.detailSku === row.sku ? renderSkuDetailTableRow(row, totalColumns) : "");
   }).join("");
 
-  els.skuDetailPanel.innerHTML = detailRow ? renderSkuDetailPanel(detailRow) : "";
-  els.skuDetailPanel.hidden = !detailRow;
+  if (els.skuDetailPanel) {
+    els.skuDetailPanel.innerHTML = "";
+    els.skuDetailPanel.hidden = true;
+  }
 
   els.pageInfo.textContent = `第 ${state.page} / ${totalPages} 页，共 ${numberFmt.format(rows.length)} 个 SKU`;
   els.prevPage.disabled = state.page <= 1;
@@ -1543,7 +1553,6 @@ function renderSourceDetail() {
     <tbody>${visibleRows.map((source) => {
       const key = `${source.msku}|${source.rawSku}|${source.type}|${source.qty}`;
       const encodedKey = encodeURIComponent(key);
-      const opened = state.sourceTrace.openKeys.has(key);
       const riskText = source.sourceRisk.labels.join(" / ");
       const monthCells = state.months.map((item) => `
         <td class="num month-col">${numberFmt.format(source.mskuValues?.[item] || 0)}</td>
@@ -1559,11 +1568,9 @@ function renderSourceDetail() {
         <td>${escapeHtml(sourceAdjustmentLabel(source))}</td>
         <td class="num">${numberFmt.format(source.contribution)}</td>
         <td class="num">${pctFmt.format(source.share * 100)}%</td>
-        <td><button class="link-btn source-reason-btn" data-source-key="${encodedKey}">${escapeHtml(riskText)}</button></td>
+        <td><span class="source-risk-text" data-source-key="${encodedKey}">${escapeHtml(riskText || "风险较低")}</span></td>
         ${monthCells}
-      </tr>${opened ? `<tr class="source-reason-row"><td colspan="${10 + state.months.length * 2}">
-        <strong>风险原因：</strong>${source.sourceRisk.reasons.map(escapeHtml).join("；")}
-      </td></tr>` : ""}`;
+      </tr>`;
     }).join("")}</tbody>
   </table>`;
 }
@@ -2108,14 +2115,6 @@ els.sourceRiskOnly.addEventListener("click", () => {
   state.sourceTrace.highRiskOnly = !state.sourceTrace.highRiskOnly;
   state.sourceTrace.showAll = false;
   state.sourceTrace.openKeys.clear();
-  renderSourceDetail();
-});
-els.sourceDetail.addEventListener("click", (event) => {
-  const target = event.target.closest("[data-source-key]");
-  if (!target) return;
-  const key = decodeURIComponent(target.dataset.sourceKey);
-  if (state.sourceTrace.openKeys.has(key)) state.sourceTrace.openKeys.delete(key);
-  else state.sourceTrace.openKeys.add(key);
   renderSourceDetail();
 });
 els.trendCanvas.addEventListener("mousemove", (event) => {
