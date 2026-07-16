@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EVIL ENERGY SKU预测工作台</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">SKU</div>
+      <div>
+        <h1>SKU预测工作台</h1>
+        <p>MSKU拆解 · 风险平衡 · 人工终版</p>
+      </div>
+    </div>
+
+    <section class="side-card">
+      <h2>1. 导入数据</h2>
+      <label>云端邮箱</label>
+      <input id="cloudUserEmail" type="email" placeholder="填写白名单邮箱" />
+      <button id="loadCloudMskuPackage" type="button">导入最新MSKU预测包</button>
+      <div id="cloudStatus" class="file-name">云端未连接</div>
+
+      <label class="file-box">
+        <strong>MSKU预测结果</strong>
+        <span>可手动兜底：MSKU、Type、标签、12个月最终预测</span>
+        <input id="mskuFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,.json" />
+      </label>
+      <div id="mskuFileName" class="file-name">未选择文件</div>
+
+      <label class="file-box">
+        <strong>MSKU-SKU映射表</strong>
+        <span>默认读取内置映射；这里可手动兜底</span>
+        <input id="mappingFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,.json" />
+      </label>
+      <div id="mappingFileName" class="file-name">未选择文件</div>
+      <button id="exportMappingJson" type="button">导出内置映射 JSON</button>
+
+      <label class="file-box">
+        <strong>SKU销售状态表</strong>
+        <span>默认读取内置状态；清库/停售自动转入迭代SKU</span>
+        <input id="statusFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,.json" />
+      </label>
+      <div id="statusFileName" class="file-name">未选择文件</div>
+      <button id="exportStatusJson" type="button">导出状态 JSON</button>
+
+      <label class="file-box">
+        <strong>人工调整表</strong>
+        <span>可选：SKU、月份、系数、加减量、直改</span>
+        <input id="adjustmentFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,.json" />
+      </label>
+      <div id="adjustmentFileName" class="file-name">未选择文件</div>
+
+      <button id="runForecast" class="primary">生成SKU预测</button>
+    </section>
+
+    <section class="side-card">
+      <h2>2. 保存与导出</h2>
+      <button id="downloadTemplate">下载导入模板 Excel</button>
+      <button id="exportResult">导出预测结果 Excel</button>
+      <label class="check-line">
+        <input id="exportFilteredOnly" type="checkbox" />
+        <span>只导出当前筛选范围</span>
+      </label>
+      <div id="exportScopeNote" class="file-name">默认导出全部 SKU</div>
+      <button id="saveProject">保存项目 JSON</button>
+      <label class="file-box compact">
+        <strong>加载项目 JSON</strong>
+        <input id="projectFile" type="file" accept=".json" />
+      </label>
+      <div id="projectFileName" class="file-name">未选择文件</div>
+    </section>
+
+    <section class="side-card hint">
+      <h2>当前规则</h2>
+      <p>版本1：MSKU最终预测 × 映射用量。</p>
+      <p>版本2：按牛鞭风险自动压制，系数 0.78-1.00。</p>
+      <p>版本3：系统平衡后叠加人工调整。</p>
+    </section>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h2>EVIL ENERGY SKU预测工作台</h2>
+        <p id="statusText">请先导入 MSKU 预测结果和 MSKU-SKU 映射表。</p>
+      </div>
+      <span class="badge">v1 本地离线</span>
+    </header>
+
+    <section class="metrics">
+      <div class="metric"><span>SKU数</span><strong id="metricSku">0</strong><small>预测SKU</small></div>
+      <div class="metric"><span>MSKU数</span><strong id="metricMsku">0</strong><small>已映射来源</small></div>
+      <div class="metric"><span>映射需求</span><strong id="metricMapped">0</strong><small>当前月</small></div>
+      <div class="metric"><span>系统平衡</span><strong id="metricBalanced">0</strong><small>当前月</small></div>
+      <div class="metric"><span>人工终版</span><strong id="metricFinal">0</strong><small>当前月</small></div>
+      <div class="metric"><span>高风险SKU</span><strong id="metricRisk">0</strong><small>高/极高</small></div>
+    </section>
+
+    <section class="panel compact-panel">
+      <div class="panel-head">
+        <div>
+          <h3>数据诊断</h3>
+          <p>生成前检查 MSKU 映射、SKU 迭代关系和状态字段；红色项会阻止生成。</p>
+        </div>
+      </div>
+      <div id="diagnosticSummary" class="diag-summary"></div>
+      <div id="diagnosticRows" class="table-wrap mini-table"></div>
+    </section>
+
+    <section class="panel compact-panel">
+      <div class="panel-head">
+        <div>
+          <h3>异常 SKU 看板</h3>
+          <p>跟随当前筛选范围，优先提示高风险、承接转入、异常增长和人工调整 SKU。</p>
+        </div>
+      </div>
+      <div id="anomalySummary" class="filter-summary">生成预测后自动显示。</div>
+      <div id="anomalyRows" class="table-wrap mini-table"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>筛选与视图</h3>
+          <p>筛选条件会同步影响 SKU预测、趋势和来源明细。</p>
+        </div>
+        <div class="toolbar">
+          <select id="monthSelect"></select>
+          <span class="inline-legend">趋势固定显示：映射 / 公式 / 最终</span>
+        </div>
+      </div>
+      <div class="filters">
+        <textarea id="skuFilter" placeholder="粘贴 SKU，换行/逗号/空格分隔"></textarea>
+        <textarea id="typeFilter" placeholder="粘贴 Type，换行/逗号/空格分隔"></textarea>
+        <select id="riskFilter">
+          <option value="">全部风险等级</option>
+          <option value="极高">极高</option>
+          <option value="高">高</option>
+          <option value="中">中</option>
+          <option value="低">低</option>
+        </select>
+        <button id="clearFilters">清空筛选</button>
+      </div>
+      <div id="filterSummary" class="filter-summary">未设置筛选条件</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>月度SKU需求趋势</h3>
+          <p>展示当前筛选范围下的三版需求总量。</p>
+        </div>
+      </div>
+      <canvas id="trendCanvas" width="1100" height="300"></canvas>
+      <div id="trendTable" class="table-wrap"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>SKU预测总表</h3>
+          <p>三版结果：映射版本、系统平衡版、人工终版。</p>
+        </div>
+        <div class="toolbar">
+          <select id="sortSelect">
+            <option value="final-desc">终版需求降序</option>
+            <option value="risk-desc">风险分降序</option>
+            <option value="sku-asc">SKU升序</option>
+          </select>
+          <select id="pageSize">
+            <option value="50">每页50</option>
+            <option value="100" selected>每页100</option>
+            <option value="200">每页200</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead id="skuTableHead"></thead>
+          <tbody id="skuTableBody"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button id="prevPage">上一页</button>
+        <span id="pageInfo">0 / 0</span>
+        <button id="nextPage">下一页</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>SKU来源追溯</h3>
+          <p>点击上方 SKU 后，按当前月份懒加载对应 MSKU 来源贡献。</p>
+        </div>
+        <div class="toolbar">
+          <button id="sourceRiskOnly">只看高风险来源</button>
+          <button id="sourceTopToggle">展开全部来源</button>
+        </div>
+      </div>
+      <div id="sourceTraceSummary" class="source-summary">请先点击 SKU预测总表里的 SKU。</div>
+      <div id="sourceDetail" class="table-wrap source-detail-wrap"></div>
+    </section>
+
+    <section class="grid-2">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>人工调整</h3>
+            <p>支持 SKU 整体系数和 SKU+月份调整。</p>
+          </div>
+        </div>
+        <div class="adjust-grid">
+          <label>SKU<input id="manualSku" placeholder="输入SKU" /></label>
+          <label>月份<select id="manualMonth"></select></label>
+          <label>SKU整体系数<input id="manualSkuFactor" type="number" step="0.01" placeholder="默认1" /></label>
+          <label>单月系数<input id="manualMonthFactor" type="number" step="0.01" placeholder="默认1" /></label>
+          <label>单月加减量<input id="manualAdd" type="number" step="1" placeholder="默认0" /></label>
+          <label>单月直改<input id="manualDirect" type="number" step="1" placeholder="空=不直改" /></label>
+          <label class="wide">备注<input id="manualNote" placeholder="调整原因" /></label>
+        </div>
+        <div class="toolbar left">
+          <button id="applyManual" class="primary">保存人工调整</button>
+          <button id="clearManual">清空该SKU该月直改</button>
+        </div>
+        <div id="manualStatus" class="notice">暂无人工调整。</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>风险诊断</h3>
+            <p>解释系统平衡系数为什么压制。</p>
+          </div>
+        </div>
+        <div id="riskDetail" class="diagnosis">请选择或筛选 SKU 查看风险诊断。</div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <div id="loading" class="loading"><div><span class="spinner"></span><strong id="loadingText">处理中...</strong></div></div>
+
+  <script src="./vendor/xlsx.full.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

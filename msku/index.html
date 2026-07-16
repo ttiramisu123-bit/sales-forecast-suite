@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EVIL ENERGY 销售预测工作台</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="./vendor/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <button id="sidebarToggle" class="sidebar-toggle" type="button" title="收起/展开侧边栏">‹</button>
+      <div class="brand">
+        <div class="brand-mark">EE</div>
+        <div>
+          <h1>销售预测工作台</h1>
+          <p>本机离线版 · 公式内置</p>
+        </div>
+      </div>
+
+      <section class="side-card" data-short="导入">
+        <h2>1. 导入数据</h2>
+        <label class="file-drop" for="baseFile">
+          <span>导入最少必填模板</span>
+          <small>支持 xls/xlsx/csv/制表符文本；字段：SKU、价格、Type、历史月销量</small>
+        </label>
+        <input id="baseFile" type="file" accept=".csv,.json,.xls,.xlsx" />
+        <div id="baseFileName" class="file-name">未选择文件</div>
+
+        <label class="file-drop secondary" for="historicForecastFile">
+          <span>导入历史预测版本</span>
+          <small>过去做好的预测，仅用于参考曲线</small>
+        </label>
+        <input id="historicForecastFile" type="file" accept=".csv,.json,.xls,.xlsx" />
+        <div id="historicForecastFileName" class="file-name">未选择文件</div>
+
+        <label class="file-drop secondary" for="projectFile">
+          <span>加载项目 JSON</span>
+          <small>恢复上次保存的方案和调整</small>
+        </label>
+        <input id="projectFile" type="file" accept=".json" />
+        <div id="projectFileName" class="file-name">未选择文件</div>
+      </section>
+
+      <section class="side-card" data-short="状态">
+        <h2>2. 状态与辅助</h2>
+        <label>预测月份</label>
+        <select id="monthSelect"></select>
+        <label>辅助搜索 SKU / Type</label>
+        <input id="searchBox" type="search" placeholder="输入 SKU 或 Type" />
+        <div class="inline action-row">
+          <button id="undoAction" title="Ctrl+Z">撤销</button>
+          <button id="redoAction" title="Ctrl+Y / Ctrl+Shift+Z">重做</button>
+        </div>
+      </section>
+
+      <section class="side-card" data-short="批量">
+        <h2>3. 批量导入调整</h2>
+        <label>模板类型</label>
+        <select id="templateSelect">
+          <option value="global">月度全局目标</option>
+          <option value="si">类目 SI 指数</option>
+          <option value="type">Type 目标覆盖</option>
+          <option value="sku">SKU 调整项</option>
+        </select>
+        <button id="downloadSelectedTemplate" type="button">下载 CSV 模板</button>
+        <label class="file-drop secondary" for="adjustmentImportFile">
+          <span>导入调整 CSV</span>
+          <small>先预览，确认后写入，可 Ctrl+Z 撤销</small>
+        </label>
+        <input id="adjustmentImportFile" type="file" accept=".csv,.txt,.tsv" />
+        <div id="adjustmentImportFileName" class="file-name">未选择文件</div>
+        <div id="importPreview" class="import-preview">暂无待确认导入</div>
+        <button id="confirmImport" type="button" disabled>确认导入</button>
+      </section>
+
+      <section class="side-card" data-short="导出">
+        <h2>4. 保存与导出</h2>
+        <button id="saveProject">保存项目 JSON</button>
+        <button id="exportDetail">导出历史+预测 Excel</button>
+        <button id="exportSkuInput">导出 SKU系统输入 Excel</button>
+        <button id="exportReport">导出只读 HTML 报告</button>
+        <button id="downloadTemplate">下载导入模板 Excel</button>
+      </section>
+
+      <section class="side-card" data-short="云端">
+        <h2>5. 云端同步</h2>
+        <label class="cloud-url-config">Apps Script URL</label>
+        <input id="cloudApiUrl" class="cloud-url-config" type="hidden" value="https://script.google.com/macros/s/AKfycbyhmbF0cHsSo7Z4U5RRyOOSpLauS-5jFXKVL4sY7-WSjXvTXacSV_01eO5ze1LDC7A/exec" />
+        <div class="inline action-row cloud-url-config">
+          <button id="saveCloudConfig" class="cloud-url-config" type="button">保存配置</button>
+          <button id="testCloudConfig" type="button">测试连接</button>
+        </div>
+        <label>云端邮箱</label>
+        <input id="cloudUserEmail" type="email" placeholder="填写白名单邮箱" />
+        <label>保存人</label>
+        <input id="cloudUserName" type="text" placeholder="填写你的名字" />
+        <label>版本备注</label>
+        <input id="cloudNote" type="text" placeholder="例如：8月目标调整版" />
+        <div class="inline action-row">
+          <button id="cloudLoadLatest" type="button">导入最新</button>
+          <button id="cloudSaveProject" type="button">保存云端</button>
+        </div>
+        <button id="cloudSaveSkuPackage" type="button">保存 SKU输入包云端</button>
+        <button id="cloudListVersions" type="button">查看版本</button>
+        <div id="cloudStatus" class="cloud-status">未配置云端接口</div>
+      </section>
+
+      <div class="hint">
+        <strong>当前规则</strong>
+        <span>历史最后月份的下个月开始，自动预测 12 个月。</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1>EVIL ENERGY 销售预测工作台</h1>
+          <p id="statusText">请先导入基础模板。</p>
+        </div>
+        <div class="version">v1 本机离线</div>
+      </header>
+
+      <section class="metrics">
+        <article><span>SKU 数</span><strong id="metricSku">0</strong><small id="metricActive">有效 0</small></article>
+        <article><span>公式预测销量</span><strong id="metricFormulaUnits">0</strong><small id="metricFormulaMom">环比 --</small></article>
+        <article><span>最终预测销量</span><strong id="metricFinalUnits">0</strong><small id="metricFinalMom">环比 --</small></article>
+        <article><span>最终预测销售额</span><strong id="metricRevenue">$0</strong><small id="metricRevenueMom">环比 --</small></article>
+        <article><span>人工修正 SKU</span><strong id="metricAdjusted">0</strong><small>系数/加量/直改</small></article>
+        <article><span>SI 缺失类目</span><strong id="metricMissingSi">0</strong><small>需补充指数</small></article>
+      </section>
+
+      <section class="panel monthly-bar-panel">
+        <div class="panel-head">
+          <div>
+            <h2>月度销售额趋势（全年总览）</h2>
+            <p>12 个月最终预测销售额，柱高按比例缩放；柱间标注环比涨跌。</p>
+          </div>
+        </div>
+        <div id="monthlyTrendBar" class="monthly-trend-bar"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>月度目标分配</h2>
+            <p>按月份设置全局涨幅，再按 Type 稳定度和趋势分配；手动目标为空时使用建议值。</p>
+          </div>
+          <div class="toolbar">
+            <button id="applyGlobalTargets" type="button">全局应用</button>
+            <button id="applyCategoryTargets" type="button">类目应用</button>
+            <button id="resetTypeTargets" type="button">清空人工覆盖</button>
+          </div>
+        </div>
+        <div id="targetApplyStatus" class="target-apply-status">先填写全局目标，点“全局应用”生成 Type 建议；确认后点“类目应用”写入 SKU。</div>
+        <div class="target-table-wrap">
+          <table class="target-table">
+            <thead>
+              <tr id="targetMatrixHeader"></tr>
+            </thead>
+            <tbody id="typeTargetRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="grid two">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Type/类目销售额汇总趋势</h2>
+              <p>当前月份：<span id="currentMonthLabel">--</span></p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="type-summary-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>公式销量</th>
+                  <th>最终销量</th>
+                  <th>最终销售额</th>
+                  <th>占比</th>
+                  <th>环比</th>
+                </tr>
+              </thead>
+              <tbody id="typeRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>SI 指数维护</h2>
+              <p>内置默认 SI；导入后如遇缺失类目，在这里补充 12 个月指数。</p>
+            </div>
+            <button id="applySi">保存 SI</button>
+          </div>
+          <div id="siEditor" class="si-editor"></div>
+        </article>
+      </section>
+
+      <section class="bulk-panel compact-filter shared-analysis-filter">
+        <div class="filter-toolbar">
+          <strong>筛选</strong>
+          <textarea id="bulkSkuInput" rows="2" placeholder="粘贴 SKU，换行/逗号/空格/分号分隔"></textarea>
+          <textarea id="bulkTypeInput" rows="2" placeholder="粘贴 Type，换行/逗号/空格/分号分隔"></textarea>
+          <textarea id="ownerFilterInput" rows="2" placeholder="粘贴负责人，换行/逗号/空格/分号分隔"></textarea>
+          <span id="bulkFilterSummary">已筛出 0 个 SKU</span>
+          <button id="clearBulkFilter" type="button">清空筛选</button>
+        </div>
+        <div id="bulkFilterTags" class="filter-tags"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>趋势曲线</h2>
+            <p>和下方 SKU 预测明细共用筛选条件；支持整体、Type、SKU 粒度查看。</p>
+          </div>
+          <div class="toolbar">
+            <select id="scopeSelect">
+              <option value="overall">整体</option>
+              <option value="type">Type/类目</option>
+              <option value="sku">单个 SKU</option>
+            </select>
+            <select id="entitySelect"></select>
+            <select id="metricSelect">
+              <option value="units">销量</option>
+              <option value="revenue">销售额</option>
+            </select>
+          </div>
+        </div>
+        <div class="chart-layout">
+          <div class="chart-area">
+            <canvas id="trendCanvas" height="360"></canvas>
+            <div id="trendTooltip" class="chart-tooltip"></div>
+          </div>
+          <aside id="trendLegend" class="chart-side-legend"></aside>
+        </div>
+        <div class="table-wrap mini chart-table">
+          <table>
+            <thead>
+              <tr id="chartDataHeader"></tr>
+            </thead>
+            <tbody id="chartDataRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>SKU 预测明细</h2>
+            <p>展示三条结果：公式预测、人工修正后最终预测、历史预测参考。</p>
+          </div>
+          <div class="toolbar">
+            <select id="stabilityFilter">
+              <option value="">全部稳定层级</option>
+              <option value="高稳定">高稳定</option>
+              <option value="中稳定">中稳定</option>
+              <option value="低稳定">低稳定</option>
+              <option value="样本不足">样本不足</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap tall">
+          <table>
+            <thead>
+              <tr id="skuHeaderRow"></tr>
+            </thead>
+            <tbody id="skuRows"></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <span id="skuPageInfo">共 0 条</span>
+          <div class="inline">
+            <label for="skuPageSize">每页</label>
+            <select id="skuPageSize">
+              <option value="50">50</option>
+              <option value="100" selected>100</option>
+              <option value="200">200</option>
+              <option value="all">全部</option>
+            </select>
+          </div>
+          <div class="inline">
+            <button id="skuPrevPage">上一页</button>
+            <button id="skuNextPage">下一页</button>
+          </div>
+          <div id="skuPageNumbers" class="page-numbers"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>SKU历史销量 + 预测拆解</h2>
+            <p id="detailTitle">点击 SKU 行查看清洗、稳定系数、SI、趋势、环比封顶和人工修正。</p>
+          </div>
+          <div class="toolbar">
+            <button id="clearManual">清空当前 SKU 当前月直改</button>
+            <button id="clearMonthManual">清空本月全部直改</button>
+          </div>
+        </div>
+        <div class="grid two detail-grid">
+          <div>
+            <canvas id="skuCanvas" height="280"></canvas>
+          </div>
+          <div id="breakdown" class="breakdown"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast"></div>
+  <div id="loadingOverlay" class="loading-overlay"><div class="spinner"></div><span id="loadingText">处理中...</span></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
