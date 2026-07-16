@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EVIL ENERGY 预测系统入口</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="portal">
+    <header class="hero">
+      <div>
+        <span class="eyebrow">EVIL ENERGY Forecast Suite</span>
+        <h1>销售预测系统入口</h1>
+        <p>MSKU 销售预测和 SKU 需求预测保持独立运行，这里只做统一入口和云端状态查看。</p>
+      </div>
+      <div class="auth-card">
+        <label>白名单邮箱</label>
+        <input id="cloudUserEmail" type="email" placeholder="填写你的云端白名单邮箱" />
+        <button id="checkCloudAuth" type="button">检查权限</button>
+        <div id="authStatus" class="status">未检查权限</div>
+      </div>
+    </header>
+
+    <section class="apps">
+      <article class="app-card">
+        <div>
+          <span class="tag">第一步</span>
+          <h2>MSKU 销售预测系统</h2>
+          <p>导入历史销量，生成 MSKU 月度预测；确认后保存 SKU 输入包到云端。</p>
+        </div>
+        <a class="primary" href="./msku/index.html">进入 MSKU 系统</a>
+      </article>
+
+      <article class="app-card">
+        <div>
+          <span class="tag">第二步</span>
+          <h2>SKU 需求预测系统</h2>
+          <p>读取最新 MSKU 输入包，匹配内置 MSKU-SKU 映射关系，生成 SKU 需求预测。</p>
+        </div>
+        <a class="primary" href="./sku/index.html">进入 SKU 系统</a>
+      </article>
+    </section>
+
+    <section class="status-panel">
+      <div class="panel-head">
+        <h2>云端版本状态</h2>
+        <button id="refreshCloudStatus" type="button">刷新状态</button>
+      </div>
+      <div class="status-grid">
+        <div>
+          <span>最新 MSKU 项目</span>
+          <strong id="mskuProjectStatus">--</strong>
+        </div>
+        <div>
+          <span>最新 SKU 输入包</span>
+          <strong id="skuPackageStatus">--</strong>
+        </div>
+        <div>
+          <span>当前权限</span>
+          <strong id="roleStatus">--</strong>
+        </div>
+      </div>
+      <p class="note">门户页只读取云端状态；两个预测系统仍在各自目录独立运行，避免互相影响。</p>
+    </section>
+
+    <section class="status-panel">
+      <div class="panel-head">
+        <h2>配置健康检查</h2>
+        <button id="runHealthCheck" type="button">运行检查</button>
+      </div>
+      <div id="healthRows" class="health-list">
+        <div>点击运行检查后，会确认云端接口、内置映射和内置状态文件是否可用。</div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="./app.js"></script>
+</body>
+</html>
