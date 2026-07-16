@@ -213,11 +213,17 @@ function parseDelimited(text) {
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i];
     const next = text[i + 1];
-    if (ch === '"' && quoted && next === '"') {
-      cell += '"';
-      i += 1;
-    } else if (ch === '"') {
-      quoted = !quoted;
+    if (ch === '"') {
+      if (quoted && next === '"') {
+        cell += '"';
+        i += 1;
+      } else if (quoted && (next === delimiter || next === "\n" || next === "\r" || next === undefined)) {
+        quoted = false;
+      } else if (!quoted && cell === "") {
+        quoted = true;
+      } else {
+        cell += ch;
+      }
     } else if (ch === delimiter && !quoted) {
       row.push(cell);
       cell = "";
