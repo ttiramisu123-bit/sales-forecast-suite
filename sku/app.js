@@ -266,24 +266,66 @@ function setFileName(el, file) {
   el.textContent = file ? `已选择：${file.name}` : "未选择文件";
 }
 
-function monthColumns(row) {
+function usableMonthHeader(header) {
+  const text = String(header || "");
+  if (/销售额|金额|revenue|amount|price|价格/i.test(text)) return false;
+  if (/历史|actual|history/i.test(text)) return false;
+  return true;
+}
+
+function preferredMonthHeader(header) {
+  const text = String(header || "");
+  return /预测销量|最终预测|终版需求|预测|需求|销量|units/i.test(text);
+}
+
+function monthColumns(row, source = {}) {
   const headers = row.__headers || Object.keys(row);
+  const sourceMonthList = Array.isArray(source?.months) ? source.months : source?.project?.months;
+  const sourceMonths = Array.isArray(sourceMonthList)
+    ? sourceMonthList.map(normalizeMonth).filter((month) => /^20\d{2}-\d{2}$/.test(month))
+    : [];
+  if (sourceMonths.length) {
+    return [...new Set(sourceMonths)].map((month) => {
+      const candidates = headers
+        .filter((header) => normalizeMonth(header) === month)
+        .filter(usableMonthHeader);
+      const exact = candidates.find((header) => String(header).trim() === month);
+      const preferred = candidates.find(preferredMonthHeader);
+      return { header: preferred || exact || candidates[0] || month, month };
+    }).filter((item) => item.header);
+  }
+  const seen = new Set();
   return headers
     .map((header) => ({ header, month: normalizeMonth(header) }))
-    .filter((item) => /^20\d{2}-\d{2}$/.test(item.month))
+    .filter((item) => /^20\d{2}-\d{2}$/.test(item.month) && usableMonthHeader(item.header))
+    .sort((a, b) => {
+      if (a.month !== b.month) return a.month.localeCompare(b.month);
+      return Number(preferredMonthHeader(b.header)) - Number(preferredMonthHeader(a.header));
+    })
+    .filter((item) => {
+      if (seen.has(item.month)) return false;
+      seen.add(item.month);
+      return true;
+    })
     .sort((a, b) => a.month.localeCompare(b.month));
 }
 
 function dataRows(data) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.rows)) return data.rows;
-  if (Array.isArray(data?.project?.rows)) return data.project.rows;
+  if (Array.isArray(data)) {
+    return Array.isArray(data[0]) ? rowsToObjects(data) : data;
+  }
+  if (Array.isArray(data?.project?.rows)) return dataRows(data.project);
+  if (Array.isArray(data?.rows)) {
+    if (Array.isArray(data.headers) && Array.isArray(data.rows[0])) return rowsToObjects([data.headers, ...data.rows]);
+    return Array.isArray(data.rows[0]) ? rowsToObjects(data.rows) : data.rows;
+  }
   return [];
 }
 
-function normalizeMskuRows(rows) {
+function normalizeMskuRows(source) {
+  const rows = dataRows(source);
   const first = rows[0] || {};
-  const months = monthColumns(first);
+  const months = monthColumns(first, source);
   if (!months.length) throw new Error("MSKU预测结果没有识别到月份列，例如 2026-07。");
   state.months = months.map((item) => item.month);
   return rows.map((row) => {
@@ -1226,7 +1268,7 @@ async function loadLatestMskuPackageFromCloud(auto = false) {
   try {
     const data = await cloudRequest("latest", { dataset_type: "sku_input_package" });
     if (!data.project) throw new Error("云端暂无 SKU输入包版本。");
-    state.mskuRows = normalizeMskuRows(dataRows(data.project));
+    state.mskuRows = normalizeMskuRows(data.project);
     els.mskuFileName.textContent = `已导入云端MSKU预测包：${data.version?.version_id || "--"}`;
     setCloudStatus(`已导入最新MSKU预测包：${data.version?.saved_by || "--"} / ${data.version?.saved_at || "--"}`, "success");
     if (!state.mappingRows.length) await loadEmbeddedMapping();
@@ -1440,7 +1482,7 @@ async function handleFile(file, kind) {
   setLoading(true, "正在读取文件...");
   try {
     const data = await readDataFile(file);
-    if (kind === "msku") state.mskuRows = normalizeMskuRows(dataRows(data));
+    if (kind === "msku") state.mskuRows = normalizeMskuRows(data);
     if (kind === "mapping") {
       state.mappingRows = normalizeMappingRows(dataRows(data));
       state.embeddedMappingLoaded = false;
