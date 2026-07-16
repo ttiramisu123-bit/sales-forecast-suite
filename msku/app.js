@@ -1565,8 +1565,8 @@ function removeBulkFilterTag(kind, value) {
 function renderSkuTable() {
   const month = state.selectedMonth;
   els.skuHeaderRow.innerHTML = [
-    "<th>SKU</th>",
-    "<th>Type</th>",
+    "<th class=\"sku-sticky-col sku-sticky-sku\">SKU</th>",
+    "<th class=\"sku-sticky-col sku-sticky-type\">Type</th>",
     "<th>负责人</th>",
     "<th>价格</th>",
     "<th>稳定层级</th>",
@@ -1622,8 +1622,8 @@ function renderSkuTable() {
       ? `<button class="small primary row-save" data-action="save-row" data-sku="${escapeHtml(row.sku)}" type="button">保存</button><button class="small row-cancel" data-action="cancel-row" data-sku="${escapeHtml(row.sku)}" type="button">取消</button>`
       : `<button class="small" data-action="edit-row" data-sku="${escapeHtml(row.sku)}" type="button">编辑</button>`;
     return `<tr class="clickable" data-sku="${escapeHtml(row.sku)}">
-      <td>${escapeHtml(row.sku)}</td>
-      <td>${escapeHtml(row.type)}</td>
+      <td class="sku-sticky-col sku-sticky-sku">${escapeHtml(row.sku)}</td>
+      <td class="sku-sticky-col sku-sticky-type">${escapeHtml(row.type)}</td>
       <td>${escapeHtml(row.owner || "")}</td>
       <td>${moneyFmt.format(row.price)}</td>
       <td><span class="tag">${escapeHtml(row.stability)}</span></td>
@@ -2362,6 +2362,7 @@ async function loadLatestFromCloud() {
   try {
     const data = await cloudRequest("latest", { dataset_type: "msku_project" });
     if (!data.project) throw new Error("云端暂无项目版本。");
+    assertLoadableMskuProject(data.project);
     loadProject(data.project);
     const version = data.version || {};
     setCloudStatus(`已导入云端最新版本：${version.version_id || "--"}，保存人 ${version.saved_by || "--"}`, "success");
@@ -2384,14 +2385,25 @@ async function autoLoadLatestFromCloudIfBlank() {
       return;
     }
     if (state.rawRows.length) return;
+    assertLoadableMskuProject(data.project);
     loadProject(data.project);
     const version = data.version || {};
     setCloudStatus(`已自动导入云端最新版本：${version.version_id || "--"}，保存人 ${version.saved_by || "--"}`, "success");
     showToast("已自动导入云端最新版本。", "success");
   } catch (error) {
-    setCloudStatus(error.message ? `自动导入云端失败：${error.message}` : "自动导入云端失败。", "error");
+    setCloudStatus(error.message ? `自动导入云端已跳过：${error.message}` : "自动导入云端已跳过。", "error");
   } finally {
     setLoading(false);
+  }
+}
+
+function assertLoadableMskuProject(project) {
+  const rows = Array.isArray(project?.rawRows) ? project.rawRows : [];
+  if (!rows.length) {
+    throw new Error("云端最新MSKU项目不是完整历史销量项目，请先手动导入历史销量表并重新保存MSKU项目。");
+  }
+  if (!detectHistoryColumns(rows).length) {
+    throw new Error("云端最新MSKU项目缺少历史月份列，请先手动导入带 2025-07 这类月份列的历史销量表并重新保存MSKU项目。");
   }
 }
 

@@ -329,7 +329,7 @@ tbody tr.selected-row td {
 }
 th.month-col,
 td.month-col {
-  min-width: 92px;
+  min-width: 82px;
   font-variant-numeric: tabular-nums;
 }
 th.month-col span {
@@ -355,12 +355,105 @@ tbody tr:nth-child(even) td.sticky-col {
   background: #f8fafc;
 }
 .sticky-sku {
-  min-width: 190px;
-  max-width: 240px;
+  min-width: 176px;
+  max-width: 220px;
+}
+.sticky-category {
+  left: 176px;
+  min-width: 138px;
+  max-width: 180px;
+  z-index: 2;
 }
 .sticky-msku {
   min-width: 180px;
   max-width: 240px;
+}
+.sku-detail-row td {
+  background: #f8fbff;
+  white-space: normal;
+}
+.sku-detail-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.source-summary-grid.compact {
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+}
+.source-summary-grid.compact div {
+  padding: 8px;
+}
+.source-summary-grid.compact strong {
+  font-size: 14px;
+}
+.inline-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.inline-source-table {
+  margin-top: 10px;
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.inline-source-table table {
+  min-width: 640px;
+}
+.inline-detail-note {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  background: var(--soft);
+}
+.row-actions {
+  min-width: 110px;
+}
+.row-actions .small,
+button.small {
+  min-height: 28px;
+  padding: 0 9px;
+  margin-right: 6px;
+  font-size: 12px;
+}
+.row-month-input {
+  width: 72px;
+  height: 28px;
+  text-align: right;
+  border: 1px solid #9bbbe0;
+  border-radius: 6px;
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+.row-note-input {
+  width: 150px;
+  height: 28px;
+  border: 1px solid #9bbbe0;
+  border-radius: 6px;
+  padding: 0 8px;
+}
+.note-cell {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.inline-risk-select {
+  width: 86px;
+  height: 26px;
+  min-height: 26px;
+  margin-top: 4px;
+  padding: 0 6px;
+  border-color: rgba(255,255,255,.45);
+  background: #fff;
+  color: #0f2742;
+  font-size: 12px;
+}
+.muted-row td {
+  color: #94a3b8;
+  background: #f8fafc;
 }
 
 .risk {

@@ -12,6 +12,9 @@ const state = {
   sourceRows: [],
   selectedMonth: "",
   selectedSku: "",
+  detailSku: "",
+  detailSourceSku: "",
+  editingSku: "",
   page: 1,
   pageSize: 100,
   filters: {
@@ -36,6 +39,16 @@ const state = {
     showAll: false,
     highRiskOnly: false,
     openKeys: new Set(),
+  },
+  trendVisible: {
+    mapped: true,
+    balanced: true,
+    final: true,
+  },
+  trendHoverIndex: null,
+  trendChart: {
+    plot: null,
+    legend: [],
   },
 };
 
@@ -819,6 +832,147 @@ function sortedRows(rows) {
   return sorted;
 }
 
+function latestRowNote(row) {
+  for (let index = state.months.length - 1; index >= 0; index -= 1) {
+    const note = normalize(state.adjustments.month.get(adjustmentKey(row.sku, state.months[index]))?.note);
+    if (note) return note;
+  }
+  return normalize(state.adjustments.skuFactor.get(row.sku)?.note);
+}
+
+function manualMonthCount(row) {
+  return state.months.reduce((count, month) => (
+    count + (state.adjustments.month.has(adjustmentKey(row.sku, month)) ? 1 : 0)
+  ), 0);
+}
+
+function riskFilterOptions() {
+  return [...els.riskFilter.options]
+    .map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.filters.risk ? "selected" : ""}>${escapeHtml(option.textContent)}</option>`)
+    .join("");
+}
+
+function rowSourceSummary(row) {
+  const month = state.selectedMonth;
+  const currentTotal = row.mapped[month] || 0;
+  const sources = row.sources
+    .map((source) => {
+      const contribution = source.values?.[month] || 0;
+      const share = currentTotal > 0 ? contribution / currentTotal : 0;
+      return { ...source, contribution, share, sourceRisk: sourceRiskInfo(source, share) };
+    })
+    .sort((a, b) => b.contribution - a.contribution);
+  const typeList = [...new Set(row.sources.map((source) => source.type).filter(Boolean))];
+  const highRiskCount = sources.filter((source) => source.sourceRisk.high).length;
+  const topSource = sources[0] || null;
+  const transferPaths = row.sources
+    .filter((source) => source.transferred)
+    .map((source) => source.transferPath)
+    .filter(Boolean);
+
+  return { sources, typeList, highRiskCount, topSource, transferPaths };
+}
+
+function renderInlineSourceTable(row, summary) {
+  const rows = summary.sources.slice(0, 20);
+  if (!rows.length) return `<div class="empty-note">暂无来源明细。</div>`;
+  const hiddenCount = Math.max(0, summary.sources.length - rows.length);
+  return `
+    <div class="inline-source-table">
+      <table>
+        <thead><tr><th>MSKU</th><th>Type</th><th class="num">贡献销量</th><th class="num">贡献占比</th><th>风险标记</th></tr></thead>
+        <tbody>${rows.map((source) => `<tr class="${source.sourceRisk.high ? "source-risk-row" : ""}">
+          <td>${escapeHtml(source.msku)}</td>
+          <td>${escapeHtml(source.type || "--")}</td>
+          <td class="num">${numberFmt.format(source.contribution)}</td>
+          <td class="num">${pctFmt.format(source.share * 100)}%</td>
+          <td>${source.sourceRisk.labels.map((label) => `<span class="tag warn">${escapeHtml(label)}</span>`).join(" ")}</td>
+        </tr>`).join("")}</tbody>
+      </table>
+      ${hiddenCount ? `<div class="inline-detail-note">仅展示贡献 Top 20，还有 ${numberFmt.format(hiddenCount)} 条未展开；完整来源可在下方“SKU来源追溯”查看。</div>` : ""}
+    </div>
+  `;
+}
+
+function renderSkuDetailRow(row, colspan) {
+  const summary = rowSourceSummary(row);
+  const sourceOpen = state.detailSourceSku === row.sku;
+  const top = summary.topSource;
+  const transferText = summary.transferPaths.length ? summary.transferPaths.slice(0, 3).join(" / ") : "无转入";
+  return `<tr class="sku-detail-row" data-detail-row="${escapeHtml(row.sku)}">
+    <td colspan="${colspan}">
+      <div class="sku-detail-card">
+        <div class="source-summary-grid compact">
+          <div><span>SKU名称</span><strong>${escapeHtml(row.skuName || "--")}</strong></div>
+          <div><span>销售状态</span><strong>${escapeHtml(row.skuStatus || "正常")}</strong></div>
+          <div><span>来源MSKU数</span><strong>${numberFmt.format(row.risk.sourceMskuCount)}</strong></div>
+          <div><span>来源Type</span><strong>${escapeHtml(summary.typeList.slice(0, 3).join(" / ") || "--")}${summary.typeList.length > 3 ? ` 等${numberFmt.format(summary.typeList.length)}个` : ""}</strong></div>
+          <div><span>最大贡献MSKU</span><strong>${top ? `${escapeHtml(top.msku)} ${pctFmt.format(top.share * 100)}%` : "--"}</strong></div>
+          <div><span>转入状态</span><strong>${escapeHtml(row.transferInCount ? `承接${row.transferInCount}个` : "无")}</strong></div>
+          <div><span>高风险来源</span><strong>${numberFmt.format(summary.highRiskCount)}</strong></div>
+          <div><span>人工覆盖月份</span><strong>${numberFmt.format(manualMonthCount(row))}</strong></div>
+        </div>
+        <div class="source-summary-note">转入路径：${escapeHtml(transferText)}；风险原因：${row.risk.reasons.map(escapeHtml).join("；")}</div>
+        <div class="inline-actions">
+          <button class="small" data-action="toggle-inline-source" data-sku="${escapeHtml(row.sku)}" type="button">${sourceOpen ? "收起来源明细" : "查看来源明细"}</button>
+          <button class="small" data-action="select-source-panel" data-sku="${escapeHtml(row.sku)}" type="button">同步到来源追溯</button>
+        </div>
+        ${sourceOpen ? renderInlineSourceTable(row, summary) : ""}
+      </div>
+    </td>
+  </tr>`;
+}
+
+function saveSkuRowEdit(sku) {
+  const tr = [...els.skuTableBody.querySelectorAll("tr[data-row-sku]")].find((item) => item.dataset.rowSku === sku);
+  if (!tr) return;
+  const inputs = [...tr.querySelectorAll("input[data-edit-month]")];
+  const noteInput = tr.querySelector("input[data-edit-note]");
+  const note = normalize(noteInput?.value);
+  const originalNote = normalize(noteInput?.dataset.original);
+  const changed = [];
+  inputs.forEach((input) => {
+    const month = input.dataset.editMonth;
+    const nextValue = Math.max(0, Math.round(toNumber(input.value)));
+    const originalValue = Math.max(0, Math.round(toNumber(input.dataset.original)));
+    if (nextValue !== originalValue) changed.push({ month, value: nextValue });
+  });
+  const noteChanged = note !== originalNote;
+  const noteOnlyMonths = noteChanged
+    ? state.months.filter((month) => state.adjustments.month.has(adjustmentKey(sku, month)))
+    : [];
+  if (!changed.length && !noteOnlyMonths.length) {
+    state.editingSku = "";
+    renderSkuTable();
+    showToast(noteChanged ? "没有预测值改动，备注未保存。" : "没有检测到改动，已退出编辑。", noteChanged ? "error" : "success");
+    return;
+  }
+
+  changed.forEach(({ month, value }) => {
+    const key = adjustmentKey(sku, month);
+    const current = state.adjustments.month.get(key) || {};
+    state.adjustments.month.set(key, {
+      monthFactor: current.monthFactor ?? 1,
+      add: current.add ?? 0,
+      direct: value,
+      note,
+    });
+  });
+  if (!changed.length && noteOnlyMonths.length) {
+    noteOnlyMonths.forEach((month) => {
+      const key = adjustmentKey(sku, month);
+      const current = state.adjustments.month.get(key);
+      state.adjustments.month.set(key, { ...current, note });
+    });
+  }
+
+  state.editingSku = "";
+  state.selectedSku = sku;
+  buildForecast();
+  renderAll();
+  showToast(`已保存 ${numberFmt.format(changed.length)} 个月份的人工终版。`, "success");
+}
+
 function renderSkuTable() {
   const rows = sortedRows(filteredSkuRows());
   const pageSize = Number(els.pageSize.value || 100);
@@ -848,6 +1002,58 @@ function renderSkuTable() {
   els.prevPage.disabled = state.page <= 1;
   els.nextPage.disabled = state.page >= totalPages;
 }
+
+renderSkuTable = function renderSkuTableInlineEditor() {
+  const rows = sortedRows(filteredSkuRows());
+  const pageSize = Number(els.pageSize.value || 100);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  state.page = Math.min(Math.max(1, state.page), totalPages);
+  const pageRows = rows.slice((state.page - 1) * pageSize, state.page * pageSize);
+  const totalColumns = 7 + state.months.length;
+
+  els.skuTableHead.innerHTML = `<tr>
+    <th class="sticky-col sticky-sku">SKU</th>
+    <th class="sticky-col sticky-category">SKU类目</th>
+    <th>风险<br><select class="inline-risk-select" data-risk-table-filter>${riskFilterOptions()}</select></th>
+    <th class="num">风险分</th>
+    <th class="num">平衡系数</th>
+    ${state.months.map((month) => `<th class="num month-col">${escapeHtml(month)}<br><span>人工终版需求</span></th>`).join("")}
+    <th>调整原因</th>
+    <th>操作</th>
+  </tr>`;
+
+  els.skuTableBody.innerHTML = pageRows.map((row) => {
+    const isEditing = state.editingSku === row.sku;
+    const note = latestRowNote(row);
+    const monthCells = state.months.map((month) => {
+      const value = row.final[month] || 0;
+      return isEditing
+        ? `<td class="num month-col"><input class="row-month-input" data-edit-month="${escapeHtml(month)}" type="number" min="0" step="1" value="${value}" data-original="${value}" /></td>`
+        : `<td class="num month-col">${numberFmt.format(value)}</td>`;
+    }).join("");
+    const noteCell = isEditing
+      ? `<td><input class="row-note-input" data-edit-note type="text" value="${escapeHtml(note)}" data-original="${escapeHtml(note)}" placeholder="填写调整原因" /></td>`
+      : `<td class="note-cell">${escapeHtml(note || "")}</td>`;
+    const actionCell = isEditing
+      ? `<button class="small primary" data-action="save-row" data-sku="${escapeHtml(row.sku)}" type="button">保存</button><button class="small" data-action="cancel-row" data-sku="${escapeHtml(row.sku)}" type="button">取消</button>`
+      : `<button class="small" data-action="toggle-detail" data-sku="${escapeHtml(row.sku)}" type="button">${state.detailSku === row.sku ? "收起" : "详情"}</button><button class="small" data-action="edit-row" data-sku="${escapeHtml(row.sku)}" type="button">编辑</button>`;
+    const mainRow = `<tr data-row-sku="${escapeHtml(row.sku)}" class="${row.sku === state.selectedSku ? "selected-row" : ""}">
+      <td class="sticky-col sticky-sku"><button class="link-btn" data-action="select-sku" data-sku="${escapeHtml(row.sku)}" type="button">${escapeHtml(row.sku)}</button></td>
+      <td class="sticky-col sticky-category">${escapeHtml(row.skuCategory || "--")}</td>
+      <td><span class="risk ${riskClass(row.risk.level)}">${escapeHtml(row.risk.level)}</span></td>
+      <td class="num">${numberFmt.format(row.risk.score)}</td>
+      <td class="num">${round(row.risk.factor, 2)}</td>
+      ${monthCells}
+      ${noteCell}
+      <td class="row-actions">${actionCell}</td>
+    </tr>`;
+    return mainRow + (state.detailSku === row.sku ? renderSkuDetailRow(row, totalColumns) : "");
+  }).join("");
+
+  els.pageInfo.textContent = `第 ${state.page} / ${totalPages} 页，共 ${numberFmt.format(rows.length)} 个 SKU`;
+  els.prevPage.disabled = state.page <= 1;
+  els.nextPage.disabled = state.page >= totalPages;
+};
 
 function renderFilterSummary() {
   const parts = [];
@@ -1026,6 +1232,147 @@ function renderTrend() {
   }).join("");
   els.trendTable.innerHTML = `<table><thead><tr><th>指标</th>${state.months.map((month) => `<th class="num">${month}</th>`).join("")}</tr></thead><tbody>${rowsHtml}</tbody></table>`;
 }
+
+renderTrend = function renderTrendInteractive() {
+  const rows = filteredSkuRows();
+  const summary = summaryForRows(rows);
+  const canvas = els.trendCanvas;
+  const ctx = canvas.getContext("2d");
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(760, Math.round(rect.width || canvas.width));
+  const height = 300;
+  canvas.width = width * window.devicePixelRatio;
+  canvas.height = height * window.devicePixelRatio;
+  ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  const allSeries = [
+    { key: "mapped", label: "映射版本", color: "#64748b", dash: [6, 4] },
+    { key: "balanced", label: "系统平衡版", color: "#1e5aa7", dash: [] },
+    { key: "final", label: "人工终版", color: "#116b44", dash: [] },
+  ].map((item) => ({
+    ...item,
+    visible: state.trendVisible[item.key] !== false,
+    values: state.months.map((month) => summary.totals[item.key][month] || 0),
+  }));
+  const visibleSeries = allSeries.filter((item) => item.visible);
+  const max = Math.max(1, ...visibleSeries.flatMap((item) => item.values), ...allSeries.flatMap((item) => item.values));
+  const left = 58;
+  const right = 152;
+  const top = 24;
+  const bottom = 46;
+  const plotW = width - left - right;
+  const plotH = height - top - bottom;
+  const xAt = (index) => left + (plotW / Math.max(1, state.months.length - 1)) * index;
+  const yAt = (value) => top + plotH - (value / max) * plotH;
+
+  state.trendChart.plot = { left, right: width - right, top, bottom: height - bottom, plotW };
+  state.trendChart.legend = [];
+
+  ctx.strokeStyle = "#d8e2ef";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i += 1) {
+    const y = top + (plotH / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(width - right, y);
+    ctx.stroke();
+    ctx.fillStyle = "#64748b";
+    ctx.font = "11px Microsoft YaHei";
+    ctx.fillText(numberFmt.format(Math.round(max - (max / 4) * i)), 8, y + 4);
+  }
+
+  state.months.forEach((month, index) => {
+    const x = xAt(index);
+    ctx.fillStyle = "#64748b";
+    ctx.font = "12px Microsoft YaHei";
+    ctx.fillText(month.slice(5), x - 9, height - 18);
+  });
+
+  visibleSeries.forEach((item) => {
+    ctx.strokeStyle = item.color;
+    ctx.lineWidth = item.key === "final" ? 2.8 : 2;
+    ctx.setLineDash(item.dash);
+    ctx.beginPath();
+    item.values.forEach((value, index) => {
+      const x = xAt(index);
+      const y = yAt(value);
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    item.values.forEach((value, index) => {
+      const x = xAt(index);
+      const y = yAt(value);
+      ctx.beginPath();
+      ctx.fillStyle = "#fff";
+      ctx.strokeStyle = item.color;
+      ctx.lineWidth = 1.8;
+      ctx.arc(x, y, item.key === "final" ? 3.5 : 2.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    });
+  });
+
+  const legendX = width - right + 24;
+  allSeries.forEach((item, index) => {
+    const y = top + 20 + index * 30;
+    state.trendChart.legend.push({ key: item.key, x: legendX - 8, y: y - 13, w: 118, h: 24 });
+    ctx.globalAlpha = item.visible ? 1 : 0.35;
+    ctx.strokeStyle = item.color;
+    ctx.lineWidth = 2.4;
+    ctx.setLineDash(item.dash);
+    ctx.beginPath();
+    ctx.moveTo(legendX, y);
+    ctx.lineTo(legendX + 26, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = item.color;
+    ctx.font = "12px Microsoft YaHei";
+    ctx.fillText(item.label, legendX + 34, y + 4);
+    ctx.globalAlpha = 1;
+  });
+
+  if (state.trendHoverIndex !== null && state.trendHoverIndex >= 0 && state.trendHoverIndex < state.months.length) {
+    const index = state.trendHoverIndex;
+    const x = xAt(index);
+    ctx.strokeStyle = "#94a3b8";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, height - bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const tooltipW = 152;
+    const tooltipH = 82;
+    const tooltipX = Math.min(Math.max(left, x + 12), width - right - tooltipW);
+    const tooltipY = top + 8;
+    ctx.fillStyle = "rgba(15, 35, 60, .92)";
+    ctx.strokeStyle = "rgba(255,255,255,.35)";
+    ctx.lineWidth = 1;
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(tooltipX, tooltipY, tooltipW, tooltipH, 8);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.fillRect(tooltipX, tooltipY, tooltipW, tooltipH);
+      ctx.strokeRect(tooltipX, tooltipY, tooltipW, tooltipH);
+    }
+    ctx.fillStyle = "#fff";
+    ctx.font = "12px Microsoft YaHei";
+    ctx.fillText(state.months[index], tooltipX + 10, tooltipY + 18);
+    allSeries.forEach((item, rowIndex) => {
+      ctx.fillStyle = item.color;
+      ctx.fillText(`${item.label}: ${numberFmt.format(item.values[index] || 0)}`, tooltipX + 10, tooltipY + 38 + rowIndex * 16);
+    });
+  }
+
+  const rowsHtml = allSeries.map((item) => `<tr class="${item.visible ? "" : "muted-row"}"><td>${escapeHtml(item.label)}</td>${state.months.map((month) => `<td class="num">${numberFmt.format(summary.totals[item.key][month] || 0)}</td>`).join("")}</tr>`).join("");
+  els.trendTable.innerHTML = `<table><thead><tr><th>指标</th>${state.months.map((month) => `<th class="num">${escapeHtml(month.slice(5))}</th>`).join("")}</tr></thead><tbody>${rowsHtml}</tbody></table>`;
+};
 
 function selectedSkuRow() {
   return state.skuRows.find((row) => row.sku === state.selectedSku) || filteredSkuRows()[0] || null;
@@ -1621,10 +1968,63 @@ els.nextPage.addEventListener("click", () => {
   state.page += 1;
   renderSkuTable();
 });
-els.skuTableBody.addEventListener("click", (event) => {
-  const target = event.target.closest("[data-sku]");
+els.skuTableHead.addEventListener("change", (event) => {
+  const target = event.target.closest("[data-risk-table-filter]");
   if (!target) return;
-  state.selectedSku = target.dataset.sku;
+  state.filters.risk = target.value;
+  els.riskFilter.value = target.value;
+  state.page = 1;
+  renderAll();
+});
+els.skuTableBody.addEventListener("click", (event) => {
+  const actionTarget = event.target.closest("[data-action]");
+  if (actionTarget) {
+    const sku = actionTarget.dataset.sku;
+    const action = actionTarget.dataset.action;
+    if (action === "toggle-detail") {
+      const opening = state.detailSku !== sku;
+      state.detailSku = opening ? sku : "";
+      if (!opening || state.detailSourceSku !== sku) state.detailSourceSku = "";
+      state.selectedSku = sku;
+      renderSkuTable();
+      renderRiskDetail();
+      return;
+    }
+    if (action === "toggle-inline-source") {
+      state.detailSourceSku = state.detailSourceSku === sku ? "" : sku;
+      renderSkuTable();
+      return;
+    }
+    if (action === "select-source-panel" || action === "select-sku") {
+      state.selectedSku = sku;
+      state.sourceTrace.showAll = false;
+      state.sourceTrace.openKeys.clear();
+      els.manualSku.value = state.selectedSku;
+      renderSkuTable();
+      renderRiskDetail();
+      renderSourceDetail();
+      return;
+    }
+    if (action === "edit-row") {
+      state.editingSku = sku;
+      state.selectedSku = sku;
+      renderSkuTable();
+      renderRiskDetail();
+      return;
+    }
+    if (action === "cancel-row") {
+      state.editingSku = "";
+      renderSkuTable();
+      return;
+    }
+    if (action === "save-row") {
+      saveSkuRowEdit(sku);
+      return;
+    }
+  }
+  const target = event.target.closest("[data-row-sku]");
+  if (!target || event.target.closest("input, textarea, select, button")) return;
+  state.selectedSku = target.dataset.rowSku;
   state.sourceTrace.showAll = false;
   state.sourceTrace.openKeys.clear();
   els.manualSku.value = state.selectedSku;
@@ -1665,6 +2065,44 @@ els.sourceDetail.addEventListener("click", (event) => {
   if (state.sourceTrace.openKeys.has(key)) state.sourceTrace.openKeys.delete(key);
   else state.sourceTrace.openKeys.add(key);
   renderSourceDetail();
+});
+els.trendCanvas.addEventListener("mousemove", (event) => {
+  if (!state.months.length || !state.trendChart.plot) return;
+  const rect = els.trendCanvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const plot = state.trendChart.plot;
+  if (x < plot.left || x > plot.right) {
+    if (state.trendHoverIndex !== null) {
+      state.trendHoverIndex = null;
+      renderTrend();
+    }
+    return;
+  }
+  const ratio = (x - plot.left) / Math.max(1, plot.plotW);
+  const nextIndex = Math.min(state.months.length - 1, Math.max(0, Math.round(ratio * (state.months.length - 1))));
+  if (nextIndex !== state.trendHoverIndex) {
+    state.trendHoverIndex = nextIndex;
+    renderTrend();
+  }
+});
+els.trendCanvas.addEventListener("mouseleave", () => {
+  if (state.trendHoverIndex === null) return;
+  state.trendHoverIndex = null;
+  renderTrend();
+});
+els.trendCanvas.addEventListener("click", (event) => {
+  const rect = els.trendCanvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const hit = state.trendChart.legend.find((box) => x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h);
+  if (!hit) return;
+  const visibleCount = Object.values(state.trendVisible).filter(Boolean).length;
+  if (state.trendVisible[hit.key] && visibleCount <= 1) {
+    showToast("至少保留一条趋势线。", "error");
+    return;
+  }
+  state.trendVisible[hit.key] = !state.trendVisible[hit.key];
+  renderTrend();
 });
 els.applyManual.addEventListener("click", applyManual);
 els.clearManual.addEventListener("click", clearManual);

@@ -891,6 +891,33 @@ th:first-child, td:first-child, th:nth-child(2), td:nth-child(2), th:nth-child(4
   text-align: left;
 }
 
+.sku-sticky-col {
+  position: sticky;
+  z-index: 3;
+  background: #fff;
+  box-shadow: 1px 0 0 var(--line);
+}
+
+th.sku-sticky-col {
+  background: #12345c;
+  color: #fff;
+  z-index: 5;
+}
+
+.sku-sticky-sku {
+  left: 0;
+  min-width: 170px;
+}
+
+.sku-sticky-type {
+  left: 170px;
+  min-width: 160px;
+}
+
+tbody tr:nth-child(even) .sku-sticky-col {
+  background: #f8fbff;
+}
+
 tbody tr:nth-child(even) {
   background: #f8fbff;
 }
