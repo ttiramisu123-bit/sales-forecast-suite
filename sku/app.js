@@ -60,7 +60,7 @@ const els = Object.fromEntries([
   "statusText", "metricSku", "metricMsku", "metricMapped", "metricBalanced", "metricFinal", "metricRisk",
   "diagnosticSummary", "diagnosticRows", "anomalySummary", "anomalyRows",
   "monthSelect", "manualMonth", "skuFilter", "typeFilter", "riskFilter", "clearFilters",
-  "filterSummary", "trendCanvas", "trendTable", "skuTableHead", "skuTableBody", "sortSelect", "pageSize",
+  "filterSummary", "trendCanvas", "trendTable", "skuTableHead", "skuTableBody", "skuDetailPanel", "sortSelect", "pageSize",
   "prevPage", "nextPage", "pageInfo", "manualSku", "manualSkuFactor", "manualMonthFactor", "manualAdd",
   "manualDirect", "manualNote", "applyManual", "clearManual", "manualStatus", "riskDetail", "sourceDetail",
   "sourceTraceSummary", "sourceTopToggle", "sourceRiskOnly", "toast", "loading", "loadingText",
@@ -923,6 +923,35 @@ function renderSkuDetailRow(row, colspan) {
   </tr>`;
 }
 
+function renderSkuDetailPanel(row) {
+  const summary = rowSourceSummary(row);
+  const sourceOpen = state.detailSourceSku === row.sku;
+  const top = summary.topSource;
+  const transferText = summary.transferPaths.length ? summary.transferPaths.slice(0, 3).join(" / ") : "无转入";
+  return `<div class="sku-detail-card" data-detail-row="${escapeHtml(row.sku)}">
+    <div class="sku-detail-title">
+      <strong>${escapeHtml(row.sku)}</strong>
+      <span>详情固定在当前可视区域，不跟随表格横向滚动。</span>
+    </div>
+    <div class="source-summary-grid compact">
+      <div><span>SKU名称</span><strong>${escapeHtml(row.skuName || "--")}</strong></div>
+      <div><span>销售状态</span><strong>${escapeHtml(row.skuStatus || "正常")}</strong></div>
+      <div><span>来源MSKU数</span><strong>${numberFmt.format(row.risk.sourceMskuCount)}</strong></div>
+      <div><span>来源Type</span><strong>${escapeHtml(summary.typeList.slice(0, 3).join(" / ") || "--")}${summary.typeList.length > 3 ? ` 等${numberFmt.format(summary.typeList.length)}个` : ""}</strong></div>
+      <div><span>最大贡献MSKU</span><strong>${top ? `${escapeHtml(top.msku)} ${pctFmt.format(top.share * 100)}%` : "--"}</strong></div>
+      <div><span>转入状态</span><strong>${escapeHtml(row.transferInCount ? `承接${row.transferInCount}个` : "无")}</strong></div>
+      <div><span>高风险来源</span><strong>${numberFmt.format(summary.highRiskCount)}</strong></div>
+      <div><span>人工覆盖月份</span><strong>${numberFmt.format(manualMonthCount(row))}</strong></div>
+    </div>
+    <div class="source-summary-note">转入路径：${escapeHtml(transferText)}；风险原因：${row.risk.reasons.map(escapeHtml).join("；") || "--"}</div>
+    <div class="inline-actions">
+      <button class="small" data-action="toggle-inline-source" data-sku="${escapeHtml(row.sku)}" type="button">${sourceOpen ? "收起来源明细" : "查看来源明细"}</button>
+      <button class="small" data-action="select-source-panel" data-sku="${escapeHtml(row.sku)}" type="button">同步到来源追溯</button>
+    </div>
+    ${sourceOpen ? renderInlineSourceTable(row, summary) : ""}
+  </div>`;
+}
+
 function saveSkuRowEdit(sku) {
   const tr = [...els.skuTableBody.querySelectorAll("tr[data-row-sku]")].find((item) => item.dataset.rowSku === sku);
   if (!tr) return;
@@ -1009,7 +1038,7 @@ renderSkuTable = function renderSkuTableInlineEditor() {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   state.page = Math.min(Math.max(1, state.page), totalPages);
   const pageRows = rows.slice((state.page - 1) * pageSize, state.page * pageSize);
-  const totalColumns = 7 + state.months.length;
+  const detailRow = pageRows.find((row) => row.sku === state.detailSku);
 
   els.skuTableHead.innerHTML = `<tr>
     <th class="sticky-col sticky-sku">SKU</th>
@@ -1047,8 +1076,11 @@ renderSkuTable = function renderSkuTableInlineEditor() {
       ${noteCell}
       <td class="row-actions">${actionCell}</td>
     </tr>`;
-    return mainRow + (state.detailSku === row.sku ? renderSkuDetailRow(row, totalColumns) : "");
+    return mainRow;
   }).join("");
+
+  els.skuDetailPanel.innerHTML = detailRow ? renderSkuDetailPanel(detailRow) : "";
+  els.skuDetailPanel.hidden = !detailRow;
 
   els.pageInfo.textContent = `第 ${state.page} / ${totalPages} 页，共 ${numberFmt.format(rows.length)} 个 SKU`;
   els.prevPage.disabled = state.page <= 1;
@@ -2031,6 +2063,26 @@ els.skuTableBody.addEventListener("click", (event) => {
   renderSkuTable();
   renderRiskDetail();
   renderSourceDetail();
+});
+els.skuDetailPanel.addEventListener("click", (event) => {
+  const actionTarget = event.target.closest("[data-action]");
+  if (!actionTarget) return;
+  const sku = actionTarget.dataset.sku;
+  const action = actionTarget.dataset.action;
+  if (action === "toggle-inline-source") {
+    state.detailSourceSku = state.detailSourceSku === sku ? "" : sku;
+    renderSkuTable();
+    return;
+  }
+  if (action === "select-source-panel") {
+    state.selectedSku = sku;
+    state.sourceTrace.showAll = false;
+    state.sourceTrace.openKeys.clear();
+    els.manualSku.value = state.selectedSku;
+    renderSkuTable();
+    renderRiskDetail();
+    renderSourceDetail();
+  }
 });
 if (els.anomalyRows) {
   els.anomalyRows.addEventListener("click", (event) => {
