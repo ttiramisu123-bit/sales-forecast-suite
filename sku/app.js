@@ -55,7 +55,7 @@ const els = Object.fromEntries([
 
 const numberFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 });
 const pctFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
-const DEFAULT_CLOUD_API_URL = "https://script.google.com/macros/s/AKfycbyhmbF0cHsSo7Z4U5RRyOOSpLauS-5jFXKVL4sY7-WSjXvTXacSV_01eO5ze1LDC7A/exec";
+const DEFAULT_CLOUD_API_URL = "https://script.google.com/macros/s/AKfycbw8tdGygnGW8Zqa2TVZKFB6VmnB0hy47s40Wr3_JyD-T4GQr2WZQDsFEJnjtih3k_yW_Q/exec";
 const EMBEDDED_MAPPING_URL = "./data/msku_sku_mapping.json";
 const EMBEDDED_STATUS_URL = "./data/sku_status.json";
 const TRANSFER_STATUSES = new Set(["清库", "清仓", "停售", "下架"]);
