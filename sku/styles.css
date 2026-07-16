@@ -54,6 +54,64 @@ button:disabled {
   background: #183552;
   color: #fff;
   overflow: auto;
+  transition: width 0.18s ease, padding 0.18s ease;
+}
+.sidebar-toggle {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  float: right;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+}
+body.sidebar-collapsed .sidebar {
+  width: 68px;
+  padding: 14px 10px;
+  overflow: hidden;
+}
+body.sidebar-collapsed .brand {
+  justify-content: center;
+  margin-bottom: 14px;
+}
+body.sidebar-collapsed .brand > div:not(.brand-mark),
+body.sidebar-collapsed .hint {
+  display: none;
+}
+body.sidebar-collapsed .brand-mark {
+  width: 38px;
+  height: 38px;
+  font-size: 13px;
+}
+body.sidebar-collapsed .side-card {
+  min-height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+body.sidebar-collapsed .side-card > * {
+  display: none;
+}
+body.sidebar-collapsed .side-card::before {
+  content: attr(data-short);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 32px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  font-weight: 700;
+}
+body.sidebar-collapsed .sidebar-toggle {
+  float: none;
+  margin-left: 20px;
 }
 .brand {
   display: flex;
@@ -136,6 +194,10 @@ button:disabled {
 .main {
   margin-left: 300px;
   padding: 24px;
+  transition: margin-left 0.18s ease;
+}
+body.sidebar-collapsed .main {
+  margin-left: 68px;
 }
 .topbar {
   display: flex;
@@ -676,6 +738,22 @@ button.active {
 }
 
 @media (max-width: 760px) {
+  .sidebar-toggle {
+    display: none;
+  }
+  body.sidebar-collapsed .sidebar {
+    width: auto;
+    padding: 14px;
+    overflow: visible;
+  }
+  body.sidebar-collapsed .brand > div:not(.brand-mark),
+  body.sidebar-collapsed .hint,
+  body.sidebar-collapsed .side-card > * {
+    display: initial;
+  }
+  body.sidebar-collapsed .side-card::before {
+    display: none;
+  }
   .sidebar {
     position: static;
     width: auto;

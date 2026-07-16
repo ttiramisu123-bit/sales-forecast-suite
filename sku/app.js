@@ -55,7 +55,7 @@ const state = {
 const els = Object.fromEntries([
   "mskuFile", "mappingFile", "statusFile", "adjustmentFile", "projectFile",
   "mskuFileName", "mappingFileName", "statusFileName", "adjustmentFileName", "projectFileName",
-  "runForecast", "downloadTemplate", "exportResult", "saveProject", "cloudUserEmail", "loadCloudMskuPackage", "cloudStatus", "exportMappingJson",
+  "sidebarToggle", "runForecast", "downloadTemplate", "exportResult", "saveProject", "cloudUserEmail", "loadCloudMskuPackage", "cloudStatus", "exportMappingJson",
   "exportStatusJson", "exportFilteredOnly", "exportScopeNote",
   "statusText", "metricSku", "metricMsku", "metricMapped", "metricBalanced", "metricFinal", "metricRisk",
   "diagnosticSummary", "diagnosticRows", "anomalySummary", "anomalyRows",
@@ -2167,6 +2167,13 @@ els.trendCanvas.addEventListener("click", (event) => {
   state.trendVisible[hit.key] = !state.trendVisible[hit.key];
   renderTrend();
 });
+if (els.sidebarToggle) {
+  els.sidebarToggle.addEventListener("click", () => {
+    document.body.classList.toggle("sidebar-collapsed");
+    els.sidebarToggle.textContent = document.body.classList.contains("sidebar-collapsed") ? "›" : "‹";
+    if (state.skuRows.length) renderTrend();
+  });
+}
 els.applyManual.addEventListener("click", applyManual);
 els.clearManual.addEventListener("click", clearManual);
 window.addEventListener("resize", () => {
