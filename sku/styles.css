@@ -374,11 +374,7 @@ tbody tr:nth-child(even) td.sticky-col {
   max-width: 240px;
 }
 .sku-detail-row td {
-  position: sticky;
-  left: 0;
-  z-index: 2;
   background: #f8fbff;
-  box-shadow: 1px 0 0 var(--line);
   white-space: normal;
 }
 .sku-detail-panel {
@@ -388,6 +384,7 @@ tbody tr:nth-child(even) td.sticky-col {
   display: none;
 }
 .sku-detail-card {
+  margin-left: var(--sku-detail-offset, 0px);
   width: min(1040px, calc(100vw - 360px));
   max-width: calc(100vw - 360px);
   padding: 12px;

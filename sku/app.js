@@ -960,6 +960,16 @@ function renderSkuDetailTableRow(row, colspan) {
   </tr>`;
 }
 
+function skuTableWrap() {
+  return els.skuTableBody?.closest(".sku-table-wrap");
+}
+
+function syncSkuDetailOffset() {
+  const wrap = skuTableWrap();
+  if (!wrap) return;
+  wrap.style.setProperty("--sku-detail-offset", `${wrap.scrollLeft}px`);
+}
+
 function saveSkuRowEdit(sku) {
   const tr = [...els.skuTableBody.querySelectorAll("tr[data-row-sku]")].find((item) => item.dataset.rowSku === sku);
   if (!tr) return;
@@ -1091,6 +1101,7 @@ renderSkuTable = function renderSkuTableInlineEditor() {
     els.skuDetailPanel.innerHTML = "";
     els.skuDetailPanel.hidden = true;
   }
+  syncSkuDetailOffset();
 
   els.pageInfo.textContent = `第 ${state.page} / ${totalPages} 页，共 ${numberFmt.format(rows.length)} 个 SKU`;
   els.prevPage.disabled = state.page <= 1;
@@ -2015,6 +2026,7 @@ els.skuTableHead.addEventListener("change", (event) => {
   state.page = 1;
   renderAll();
 });
+skuTableWrap()?.addEventListener("scroll", syncSkuDetailOffset, { passive: true });
 els.skuTableBody.addEventListener("click", (event) => {
   const actionTarget = event.target.closest("[data-action]");
   if (actionTarget) {
