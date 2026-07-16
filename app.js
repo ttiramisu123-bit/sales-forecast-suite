@@ -50,7 +50,7 @@ function versionText(version) {
 
 async function checkAuth() {
   try {
-    const data = await cloudRequest("auth");
+    const data = await cloudRequest("ping");
     const auth = data.auth || {};
     setAuthStatus(`已授权：${auth.email || "--"}（${auth.role || "--"}）`, "success");
     els.roleStatus.textContent = `${auth.role || "--"}\n${auth.email || "--"}`;
