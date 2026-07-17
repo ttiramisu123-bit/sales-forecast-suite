@@ -75,6 +75,7 @@ p {
 }
 .auth-card,
 .app-card,
+.guide-panel,
 .status-panel {
   background: #fff;
   border: 1px solid var(--line);
@@ -102,6 +103,20 @@ p {
   justify-content: space-between;
   min-height: 230px;
   padding: 22px;
+}
+.guide-panel {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+  margin-top: 18px;
+  padding: 22px;
+}
+.guide-panel p {
+  margin-bottom: 0;
+}
+.secondary-link {
+  min-width: 160px;
 }
 .tag {
   display: inline-flex;
@@ -201,8 +216,12 @@ p {
 @media (max-width: 860px) {
   .hero,
   .apps,
+  .guide-panel,
   .status-grid {
     grid-template-columns: 1fr;
+  }
+  .guide-panel {
+    display: grid;
   }
   h1 { font-size: 30px; }
 }

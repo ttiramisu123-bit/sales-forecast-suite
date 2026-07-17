@@ -608,7 +608,7 @@ function computeInputDiagnostics() {
   const mappedMskuSet = new Set(state.mappingRows.map((row) => row.msku));
   const missingMappings = state.mskuRows
     .filter((row) => row.msku && !mappedMskuSet.has(row.msku))
-    .map((row) => ({ msku: row.msku, type: row.type || "", reason: "MSKU 缺少 SKU 映射" }));
+    .map((row) => ({ msku: row.msku, type: row.type || "", reason: "MSKU 缺少 SKU 映射，本次生成会跳过该 MSKU" }));
 
   const missingReplacements = new Map();
   const cycleTransfers = new Map();
@@ -770,15 +770,6 @@ function buildForecast() {
   if (!state.mappingRows.length) throw new Error("请先导入 MSKU-SKU映射表。");
 
   const mskuMap = new Map(state.mskuRows.map((row) => [row.msku, row]));
-  const mappedMskuSet = new Set(state.mappingRows.map((row) => row.msku));
-  const missingMappings = state.mskuRows
-    .map((row) => row.msku)
-    .filter((msku) => !mappedMskuSet.has(msku));
-  if (missingMappings.length) {
-    const preview = missingMappings.slice(0, 30).join("，");
-    const more = missingMappings.length > 30 ? ` 等 ${missingMappings.length} 个` : "";
-    throw new Error(`以下 MSKU 缺少映射关系，请补充映射数据：${preview}${more}`);
-  }
   const skuMap = new Map();
   const sourceRows = [];
   const missingReplacement = new Map();
@@ -1286,9 +1277,9 @@ function renderExportScopeNote() {
 function renderInputDiagnostics() {
   if (!els.diagnosticSummary || !els.diagnosticRows) return;
   const diagnostics = state.diagnostics || computeInputDiagnostics();
-  const hardCount = diagnostics.missingMappings.length + diagnostics.missingReplacements.length + diagnostics.cycleTransfers.length;
+  const blockingCount = diagnostics.missingReplacements.length + diagnostics.cycleTransfers.length;
   const items = [
-    { label: "缺映射 MSKU", count: diagnostics.missingMappings.length, type: diagnostics.missingMappings.length ? "bad" : "ok" },
+    { label: "缺映射 MSKU", count: diagnostics.missingMappings.length, type: diagnostics.missingMappings.length ? "warn" : "ok" },
     { label: "缺迭代 SKU", count: diagnostics.missingReplacements.length, type: diagnostics.missingReplacements.length ? "bad" : "ok" },
     { label: "迭代循环", count: diagnostics.cycleTransfers.length, type: diagnostics.cycleTransfers.length ? "bad" : "ok" },
     { label: "未识别状态", count: diagnostics.unknownStatuses.length, type: diagnostics.unknownStatuses.length ? "warn" : "ok" },
@@ -1304,7 +1295,7 @@ function renderInputDiagnostics() {
   ];
   els.diagnosticRows.innerHTML = detailRows.length
     ? `<table><thead><tr><th>类型</th><th>对象</th><th>信息</th><th>处理建议</th></tr></thead><tbody>${detailRows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table>`
-    : `<div class="empty-note">${hardCount ? "请优先补齐红色诊断项。" : "暂无阻断项，生成预测前置数据正常。"}</div>`;
+    : `<div class="empty-note">${blockingCount ? "请优先补齐红色诊断项。" : "暂无阻断项，生成预测前置数据正常。"}</div>`;
 }
 
 function maxMonthlyGrowth(row) {
@@ -1784,7 +1775,8 @@ async function runForecast() {
     setLoading(true, "4/4 正在刷新看板和明细表...");
     await waitForPaint();
     renderAll();
-    showToast("SKU预测已生成。", "success");
+    const skipped = state.diagnostics?.missingMappings?.length || 0;
+    showToast(skipped ? `SKU预测已生成，已跳过 ${numberFmt.format(skipped)} 个缺映射MSKU。` : "SKU预测已生成。", "success");
     return true;
   } catch (error) {
     showToast(error.message || "生成失败", "error");
@@ -1954,7 +1946,7 @@ function exportSummaryRows(rows, sourceRows, scopeLabel) {
     ["来源明细行数", sourceRows.length, "SKU 来源明细表行数"],
     ["预测月份", `${state.months[0] || "--"} ~ ${state.months.at(-1) || "--"}`, "当前预测周期"],
     ["高风险SKU数", summary.highRiskCount, "风险分 >= 45"],
-    ["缺映射MSKU", diagnostics.missingMappings.length, "非 0 表示生成前需补 MSKU-SKU 映射"],
+    ["缺映射MSKU", diagnostics.missingMappings.length, "非 0 表示相关 MSKU 本次未进入 SKU 预测，其他已映射数据仍可生成"],
     ["缺迭代SKU", diagnostics.missingReplacements.length, "清库/停售且有需求时必须补迭代 SKU"],
     ["迭代循环", diagnostics.cycleTransfers.length, "非 0 会阻止生成"],
     ["未识别状态", diagnostics.unknownStatuses.length, "系统按正常 SKU 处理，仅作提醒"],

@@ -157,7 +157,7 @@ function setCloudStatus(message, type = "") {
 
 function setSkuConsoleLinkVisible(visible) {
   if (!els.openSkuConsole) return;
-  els.openSkuConsole.classList.toggle("hidden", !visible);
+  els.openSkuConsole.classList.remove("hidden");
 }
 
 function setCloudNewestPromptVisible(visible) {
@@ -2648,7 +2648,6 @@ async function saveSkuInputPackageToCloud() {
     setCloudStatus("SKU输入包保存已取消。", "");
     return;
   }
-  setSkuConsoleLinkVisible(false);
   setLoading(true, "正在保存 SKU输入包到云端...");
   try {
     saveCloudConfig();
@@ -2667,7 +2666,7 @@ async function saveSkuInputPackageToCloud() {
     setSkuConsoleLinkVisible(true);
     showToast("SKU输入包已保存到云端。", "success");
   } catch (error) {
-    setSkuConsoleLinkVisible(false);
+    setSkuConsoleLinkVisible(true);
     setCloudStatus(error.message || "SKU输入包保存失败。", "error");
     showToast(error.message || "SKU输入包保存失败。", "error");
   } finally {
