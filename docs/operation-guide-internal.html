@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EVIL ENERGY 销售预测工作台说明文档 · 内部口径版</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --ink: #122033;
+      --muted: #65758c;
+      --line: #d8e3f0;
+      --nav: #123b63;
+      --blue: #1e5aa7;
+      --blue-soft: #edf5ff;
+      --green: #116b44;
+      --red: #aa1e2c;
+      --amber: #9b5a00;
+      --shadow: 0 12px 30px rgba(18, 35, 63, .08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      line-height: 1.75;
+    }
+    a { color: inherit; text-decoration: none; }
+    .layout { display: flex; min-height: 100vh; }
+    .toc {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: 268px;
+      padding: 22px 0;
+      overflow-y: auto;
+      background: #10233f;
+      color: #c7d3e3;
+    }
+    .brand {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 0 22px 18px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      background: #fff;
+      color: var(--nav);
+      font-weight: 800;
+    }
+    .brand h1 { margin: 0; color: #fff; font-size: 16px; line-height: 1.3; }
+    .brand p { margin: 2px 0 0; color: #8ea1ba; font-size: 12px; }
+    .toc nav { padding: 14px 0; }
+    .toc a {
+      display: block;
+      padding: 8px 22px;
+      color: #aab8ca;
+      border-left: 3px solid transparent;
+      font-size: 13px;
+    }
+    .toc a:hover {
+      color: #fff;
+      background: rgba(255,255,255,.05);
+    }
+    .toc a.sub {
+      padding-left: 38px;
+      font-size: 12px;
+      color: #8fa2ba;
+    }
+    .toc-footer {
+      margin: 12px 22px 0;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255,255,255,.08);
+      color: #8ea1ba;
+      font-size: 12px;
+    }
+    .content {
+      width: calc(100% - 268px);
+      max-width: 1420px;
+      margin-left: 268px;
+      padding: 42px 64px 56px;
+    }
+    .hero {
+      padding: 34px 38px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #10233f, #17446f);
+      color: #fff;
+      box-shadow: var(--shadow);
+    }
+    .hero .eyebrow { color: #9ecbff; font-weight: 700; }
+    .hero h1 { margin: 8px 0 8px; font-size: 32px; }
+    .hero p { margin: 0; color: #d7e8ff; max-width: 900px; }
+    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0 16px;
+      border-radius: 8px;
+      background: #fff;
+      color: var(--nav);
+      font-weight: 700;
+    }
+    section { margin-top: 34px; scroll-margin-top: 24px; }
+    h2 {
+      margin: 0 0 14px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid var(--line);
+      color: var(--nav);
+      font-size: 24px;
+    }
+    h3 { margin: 24px 0 10px; color: var(--blue); font-size: 17px; }
+    p { color: #334155; margin: 0 0 12px; }
+    .panel {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+      margin: 14px 0;
+    }
+    .card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+    .card strong { display: block; margin-bottom: 4px; color: var(--nav); }
+    .card span { color: var(--muted); font-size: 13px; }
+    .callout {
+      margin: 14px 0;
+      padding: 14px 16px;
+      border-left: 4px solid var(--blue);
+      border-radius: 8px;
+      background: var(--blue-soft);
+      color: #1d3e61;
+    }
+    .callout.warn { border-color: var(--amber); background: #fff7e6; color: #6f4300; }
+    .callout.danger { border-color: var(--red); background: #fff0f1; color: #7f1520; }
+    table {
+      width: 100%;
+      margin: 14px 0;
+      border-collapse: collapse;
+      background: #fff;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #edf3fb;
+      color: var(--nav);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    tbody tr:hover { background: #f8fbff; }
+    .formula {
+      margin: 12px 0;
+      padding: 14px 16px;
+      overflow-x: auto;
+      border-radius: 10px;
+      background: #1e293b;
+      color: #e5eef8;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin: 16px 0;
+    }
+    .step {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+    .step b { display: block; color: var(--nav); }
+    .step span { color: var(--muted); font-size: 13px; }
+    .tag {
+      display: inline-flex;
+      padding: 2px 9px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .tag.green { background: #e9f8ef; color: var(--green); }
+    .tag.red { background: #ffe9ec; color: var(--red); }
+    .tag.amber { background: #fff1d6; color: var(--amber); }
+    ul, ol { margin: 8px 0 14px 22px; padding: 0; }
+    li { margin-bottom: 6px; }
+    @media (max-width: 980px) {
+      .toc { display: none; }
+      .content { width: 100%; margin-left: 0; padding: 24px; }
+      .flow { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 26px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="toc">
+      <div class="brand">
+        <div class="mark">EE</div>
+        <div>
+          <h1>销售预测工作台</h1>
+          <p>内部口径说明文档</p>
+        </div>
+      </div>
+      <nav>
+        <a href="#overview">一、整体用途</a>
+        <a href="#workflow">二、标准操作流程</a>
+        <a class="sub" href="#workflow-msku">MSKU 系统</a>
+        <a class="sub" href="#workflow-sku">SKU 系统</a>
+        <a href="#msku-logic">三、MSKU 预测口径</a>
+        <a href="#sku-logic">四、SKU 预测口径</a>
+        <a href="#fields">五、关键字段解释</a>
+        <a href="#adjust">六、人工调整规则</a>
+        <a href="#checks">七、核对与异常处理</a>
+        <a href="#faq">八、常见问题</a>
+      </nav>
+      <div class="toc-footer">
+        版本 v1 · 内部口径版<br>
+        更新于 2026-07<br>
+        适用：MSKU + SKU 双系统
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="hero">
+        <div class="eyebrow">EVIL ENERGY Forecast Suite</div>
+        <h1>销售预测工作台说明文档 · 内部口径版</h1>
+        <p>本文档写给内部复核使用，除操作顺序、字段含义和结果核对方法外，也包含清洗规则、预测影响项、风险评分等更细口径。这里不包含 GitHub、云端脚本、权限配置等部署步骤。</p>
+        <div class="hero-actions">
+          <a class="btn" href="../index.html">返回系统入口</a>
+          <a class="btn" href="../msku/index.html">进入 MSKU 系统</a>
+          <a class="btn" href="../sku/index.html">进入 SKU 系统</a>
+        </div>
+      </header>
+
+      <section id="overview" class="panel">
+        <h2>一、整体用途</h2>
+        <p>工作台分为两个独立系统：先用 MSKU 销售预测系统生成“销售侧预测”，再用 SKU 需求预测系统把 MSKU 预测拆解到真实 SKU 需求，并通过风险平衡降低牛鞭效应。</p>
+        <div class="grid">
+          <div class="card">
+            <strong>MSKU 销售预测系统</strong>
+            <span>面向销售表现，按 MSKU、Type、价格、历史销量、季节性和人工目标生成未来 12 个月最终预测销量与销售额。</span>
+          </div>
+          <div class="card">
+            <strong>SKU 需求预测系统</strong>
+            <span>面向供应需求，把 MSKU 最终预测按映射关系转成 SKU 需求，再结合风险评分、销售状态和人工修正得到 SKU 人工终版。</span>
+          </div>
+          <div class="card">
+            <strong>两套系统独立运行</strong>
+            <span>MSKU 负责预测输入，SKU 负责需求拆解和风险平衡。两边不混在一个页面里，避免数据量过大导致卡顿。</span>
+          </div>
+        </div>
+        <div class="callout">
+          核心原则：MSKU 预测看销售趋势，SKU 预测看真实需求和供应风险。运营调整应先确认销售预测，再进入 SKU 维度检查映射、迭代、风险和终版需求。
+        </div>
+      </section>
+
+      <section id="workflow" class="panel">
+        <h2>二、标准操作流程</h2>
+        <div class="flow">
+          <div class="step"><b>Step 1</b><span>进入 MSKU 系统，导入历史销量基础数据。</span></div>
+          <div class="step"><b>Step 2</b><span>检查预测、目标涨幅、Type 汇总和趋势曲线。</span></div>
+          <div class="step"><b>Step 3</b><span>确认后保存 SKU 输入包到云端。</span></div>
+          <div class="step"><b>Step 4</b><span>进入 SKU 系统，导入最新 MSKU 预测包。</span></div>
+          <div class="step"><b>Step 5</b><span>查看风险、来源、终版需求，必要时人工调整并导出。</span></div>
+        </div>
+
+        <h3 id="workflow-msku">MSKU 系统操作顺序</h3>
+        <ol>
+          <li>导入历史销量数据，确认 SKU 数、有效 SKU、价格、Type、历史月份读取正常。</li>
+          <li>查看月度销售额趋势、Type/类目汇总、趋势曲线和 SKU 预测明细，确认整体方向是否符合业务预期。</li>
+          <li>如需要设置目标增长，先在“月度目标分配”填写全局目标，点击“全局应用”生成 Type 建议。</li>
+          <li>确认 Type 建议后，点击“类目应用”，才会把 Type 涨幅写入 SKU 最终预测。</li>
+          <li>若个别 MSKU 需要特殊处理，可在 SKU 预测明细里编辑 12 个月终版预测并填写调整原因。</li>
+          <li>确认无误后，点击“保存 SKU输入包云端”，供 SKU 系统读取。</li>
+        </ol>
+
+        <h3 id="workflow-sku">SKU 系统操作顺序</h3>
+        <ol>
+          <li>点击“导入最新MSKU预测包”，系统会读取 MSKU 端保存的最新 SKU 输入包。</li>
+          <li>系统自动加载内置 MSKU-SKU 映射关系和 SKU 销售状态表。</li>
+          <li>点击“生成SKU预测”，系统会检查缺映射、停售/清库缺迭代、迭代循环等问题。</li>
+          <li>生成成功后，先看数据诊断和异常 SKU 看板，再查看 SKU 预测总表。</li>
+          <li>点击 SKU 行的“详情/来源明细”，查看来源 MSKU 数、来源 Type、映射需求、风险和平衡系数。</li>
+          <li>如确需人工调整，点击编辑后修改任意月份的人工终版需求，填写备注并保存。</li>
+        </ol>
+      </section>
+
+      <section id="msku-logic" class="panel">
+        <h2>三、MSKU 预测口径</h2>
+        <h3>1. 基础预测链路</h3>
+        <table>
+          <thead><tr><th>步骤</th><th>说明</th><th>运营关注点</th></tr></thead>
+          <tbody>
+            <tr><td>历史销量读取</td><td>读取 SKU、价格、Type、Status、负责人和历史月份销量。</td><td>确认月份列识别正确，价格和 Type 不为空。</td></tr>
+            <tr><td>异常清洗</td><td>对明显异常高值、异常低值和突然归零进行保守处理，避免单月极端值拉飞预测。</td><td>关注 3 月旺季等真实高峰，不要把真实旺季误判为异常。</td></tr>
+            <tr><td>基础均值</td><td>基于清洗后的历史销量形成较稳定的月均基准。</td><td>这是预测的底座，不等于最终预测。</td></tr>
+            <tr><td>季节性 SI</td><td>按 Type/类目读取 12 个月 SI 指数，让预测跟随品线季节趋势。</td><td>缺 SI 的 Type 会提示补充。</td></tr>
+            <tr><td>稳定度与趋势</td><td>结合 SKU 稳定层级、近期趋势、Type 趋势，控制预测波动幅度。</td><td>稳定 SKU 更贴近模型，低稳定 SKU 更谨慎。</td></tr>
+            <tr><td>目标校准</td><td>通过全局目标和 Type 目标调整未来月份，但必须点击应用才生效。</td><td>未点击应用前只是建议或待生效值。</td></tr>
+            <tr><td>人工终版</td><td>最终预测 = 公式预测 + 目标校准 + 活动/策略/人工修正。</td><td>终版才是给后续 SKU 系统使用的口径。</td></tr>
+          </tbody>
+        </table>
+
+        <h3>2. 核心公式口径</h3>
+        <div class="formula">清洗后销量 → 基础月均 → 结合 SI 季节性 → 结合稳定度/趋势 → 公式预测
+公式预测 × Type目标系数 + 活动加量/人工直改 = MSKU最终预测
+MSKU最终预测 × 价格 = 预估销售额</div>
+
+        <h3>3. 内部口径：历史销量清洗规则</h3>
+        <p>系统会先把历史销量转成非负数，再用正销量的中位数作为基准值。如果历史月份不足 3 个月，或没有正销量，则不做异常替换。</p>
+        <table>
+          <thead><tr><th>清洗项</th><th>触发条件</th><th>替换方式</th><th>影响</th></tr></thead>
+          <tbody>
+            <tr><td>异常高值</td><td>本月销量同时高于“基准值 × 阈值”和“相邻月份均值 × 阈值”。</td><td>替换为左右相邻月份均值；没有相邻值时使用基准值。</td><td>避免单月大促、异常订单或录入错误把后续预测拉飞。</td></tr>
+            <tr><td>低位归零</td><td>本月为 0，但相邻月份均值高于基准值 50%，且相邻均值至少为 3。</td><td>替换为左右相邻月份均值。</td><td>避免断货、漏记或短暂下架导致预测被压得过低。</td></tr>
+            <tr><td>正常旺季</td><td>如果高峰月份没有同时超过基准和相邻月份阈值，则不会替换。</td><td>保留原始销量。</td><td>例如 3 月旺季如果周边月份也有趋势支撑，会尽量保留。</td></tr>
+          </tbody>
+        </table>
+        <table>
+          <thead><tr><th>基准销量区间</th><th>异常高值基准阈值</th><th>相邻月份阈值</th><th>解释</th></tr></thead>
+          <tbody>
+            <tr><td>基准 &lt; 30</td><td>1.8 倍</td><td>1.5 倍</td><td>小销量 SKU 更容易被单月波动放大，所以阈值更敏感。</td></tr>
+            <tr><td>30 - 100</td><td>2.2 倍</td><td>1.6 倍</td><td>中等销量 SKU 使用中等阈值。</td></tr>
+            <tr><td>&gt; 100</td><td>2.8 倍</td><td>1.8 倍</td><td>大销量 SKU 天然波动空间更大，所以阈值更宽。</td></tr>
+          </tbody>
+        </table>
+        <div class="formula">基准值 = 历史正销量中位数；若无中位数则取正销量均值
+相邻月份均值 = 上月和下月均值；若只有一侧，则取可用一侧
+异常高值判断 = 本月销量 &gt; 基准值 × 基准阈值 且 本月销量 &gt; 相邻均值 × 相邻阈值
+低位归零判断 = 本月销量 = 0 且 相邻均值 &gt; 基准值 × 0.5 且 相邻均值 &gt;= 3</div>
+
+        <h3>4. 内部口径：MSKU 公式预测各影响项</h3>
+        <table>
+          <thead><tr><th>影响项</th><th>计算方式</th><th>作用方向</th><th>运营解释</th></tr></thead>
+          <tbody>
+            <tr><td>清洗后均值</td><td>清洗后正销量均值。</td><td>决定预测底盘。</td><td>均值越高，后续预测整体越高。</td></tr>
+            <tr><td>稳定层级</td><td>有效月份少于 3 为样本不足；CV ≤ 0.35 为高稳定；CV ≤ 0.8 为中稳定；其余为低稳定。</td><td>决定 SKU 自身趋势、Type 趋势、SI 的权重。</td><td>越稳定越相信 SKU 自己，越不稳定越多参考 Type 趋势且限制增长。</td></tr>
+            <tr><td>SKU 趋势</td><td>近 6 个月均值 / 前 6 个月均值，不足 12 个月时按半窗口；限制在 0.90 - 1.12。</td><td>上升会抬高基准，下降会压低基准。</td><td>避免历史趋势过度外推。</td></tr>
+            <tr><td>Type 趋势</td><td>同 Type 清洗销量汇总后计算趋势。</td><td>让 SKU 跟着品线大方向走。</td><td>防止单个 SKU 历史异常导致和品线趋势背离太大。</td></tr>
+            <tr><td>混合趋势</td><td>SKU趋势 × 稳定层级SKU权重 + Type趋势 × 稳定层级Type权重。</td><td>形成趋势后均值。</td><td>高稳定更看自己，低稳定/样本不足更看 Type。</td></tr>
+            <tr><td>SI 季节性</td><td>季节折算 = 1 + (原始SI - 1) × 稳定层级SI权重。</td><td>旺季放大，淡季收缩。</td><td>稳定 SKU 更能吃到季节性，低稳定 SKU 的季节性会打折。</td></tr>
+            <tr><td>月环比封顶</td><td>预测月相对上月增长受稳定层级 up/peak 参数限制；下降受 down 参数限制。</td><td>防止预测突然跳涨或跳跌。</td><td>旺季允许更高增长，普通月份更保守。</td></tr>
+            <tr><td>历史月增量封顶</td><td>上涨时还会参考历史平均正增长量。</td><td>限制“环比百分比”带来的过度增长。</td><td>小基数 SKU 不会因为百分比涨幅过大而被拉飞。</td></tr>
+          </tbody>
+        </table>
+        <table>
+          <thead><tr><th>稳定层级</th><th>SKU趋势权重</th><th>Type趋势权重</th><th>SI权重</th><th>普通上涨上限</th><th>旺季上涨上限</th><th>下跌上限</th></tr></thead>
+          <tbody>
+            <tr><td>高稳定</td><td>55%</td><td>45%</td><td>65%</td><td>18%</td><td>40%</td><td>18%</td></tr>
+            <tr><td>中稳定</td><td>45%</td><td>55%</td><td>50%</td><td>22%</td><td>48%</td><td>22%</td></tr>
+            <tr><td>低稳定</td><td>20%</td><td>80%</td><td>35%</td><td>26%</td><td>55%</td><td>26%</td></tr>
+            <tr><td>样本不足</td><td>10%</td><td>90%</td><td>28%</td><td>25%</td><td>45%</td><td>25%</td></tr>
+          </tbody>
+        </table>
+
+        <h3>5. 月度目标分配</h3>
+        <p>月度目标分配分为两层：先从全局目标拆到 Type 建议，再从 Type 目标写入 SKU 最终预测。这样可以避免输入一个全局涨幅后立刻重算几千条 SKU，降低卡顿和误操作风险。</p>
+        <table>
+          <thead><tr><th>按钮</th><th>作用</th><th>影响范围</th></tr></thead>
+          <tbody>
+            <tr><td>全局应用</td><td>按 Type 稳定度和趋势，把全局涨幅分配成 Type 建议涨幅。</td><td>只影响 Type 建议值，不直接改 SKU。</td></tr>
+            <tr><td>类目应用</td><td>把 Type 最终涨幅写入对应 SKU 的预测。</td><td>刷新 SKU 明细、KPI、趋势条和销售额汇总。</td></tr>
+            <tr><td>清空人工覆盖</td><td>清除 Type 人工覆盖值。</td><td>需要再次点击类目应用才会影响最终预测。</td></tr>
+          </tbody>
+        </table>
+        <div class="formula">Type调整倾向 T = 稳定度因子 × 趋势因子
+稳定度因子：高稳定 0.8，中稳定 1.0，低稳定 1.3，样本不足 0.6
+趋势因子：近3月/前3月 &gt; 1.15 为 1.3；1.00-1.15 为 1.0；0.85-1.00 为 0.8；&lt; 0.85 为 0.5
+Type建议涨幅 = 全局涨幅 × 当前Type T / 所有Type T均值
+最终涨幅限制 = -5% 到 +25%；目标系数限制 = 0.3 到 2.0</div>
+        <p>Type 涨幅写入 SKU 时，还会做轻量 SKU 稳定度微调，避免同一 Type 下所有 SKU 完全同涨同跌。</p>
+        <div class="formula">SKU微调因子 = 1 + 0.15 × (SKU稳定度因子 - Type加权稳定度因子)
+微调范围限制在 0.93 - 1.07，并按销售额加权校准，保证 Type 总量基本不被破坏。</div>
+      </section>
+
+      <section id="sku-logic" class="panel">
+        <h2>四、SKU 预测口径</h2>
+        <h3>1. 三个版本的含义</h3>
+        <table>
+          <thead><tr><th>版本</th><th>怎么得到</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td>映射版本</td><td>MSKU 最终预测 × 映射用量，按最终 SKU 聚合。</td><td>表示销售预测自然传导出来的 SKU 需求。</td></tr>
+            <tr><td>系统平衡版</td><td>映射版本 × 风险平衡系数。</td><td>用于抑制牛鞭效应，避免高风险 SKU 需求被过度放大。</td></tr>
+            <tr><td>人工终版</td><td>默认等于系统平衡版；有人工系数、加减量或直改后，以人工规则为准。</td><td>运营确认后的最终 SKU 需求。</td></tr>
+          </tbody>
+        </table>
+
+        <h3>2. 映射与迭代逻辑</h3>
+        <div class="formula">SKU映射需求 = SUM(MSKU最终预测 × 映射用量)
+如果多个 MSKU 指向同一个 SKU，会自动聚合。
+如果 SKU 状态为清库/停售且有迭代 SKU，会把需求转入迭代 SKU 后再聚合。
+如果清库/停售 SKU 有预测需求但没有迭代 SKU，系统会阻止生成并提示补全。</div>
+        <div class="callout warn">
+          映射表缺失或停售/清库缺迭代，会直接影响 SKU 需求结果。遇到红色诊断时，优先补映射关系或 SKU 状态表，不建议绕过。
+        </div>
+
+        <h3>3. 风险评分与平衡系数</h3>
+        <p>SKU 系统会根据来源复杂度、稳定性、人工调整、增长幅度、活动/清仓和迭代转入情况计算风险分。风险越高，系统平衡系数越低。</p>
+        <table>
+          <thead><tr><th>风险来源</th><th>触发逻辑</th><th>可能加分</th></tr></thead>
+          <tbody>
+            <tr><td>来源 MSKU 过多</td><td>来源 MSKU 达到 4、9、20 个以上。</td><td>约 +10 / +20 / +30</td></tr>
+            <tr><td>跨 Type 来源</td><td>同一 SKU 来源跨 2 个或 4 个以上 Type。</td><td>约 +8 / +15</td></tr>
+            <tr><td>低稳定来源占比高</td><td>低稳定或样本不足来源占比达到 20% 或 50%。</td><td>约 +10 / +20</td></tr>
+            <tr><td>人工调整来源占比高</td><td>来源 MSKU 中已有人工调整占比较高。</td><td>约 +10 / +20</td></tr>
+            <tr><td>月度增长过快</td><td>映射需求环比增长超过 30% 或 60%。</td><td>约 +10 / +20</td></tr>
+            <tr><td>活动/清仓来源</td><td>来源 MSKU 带活动或清仓标记。</td><td>约 +10</td></tr>
+            <tr><td>迭代转入</td><td>清库/停售 SKU 的需求转入当前 SKU。</td><td>约 +8 / +12</td></tr>
+          </tbody>
+        </table>
+        <table>
+          <thead><tr><th>风险等级</th><th>风险分</th><th>系统平衡系数</th><th>解释</th></tr></thead>
+          <tbody>
+            <tr><td><span class="tag green">低</span></td><td>&lt; 25</td><td>1.00</td><td>风险较低，不做压制。</td></tr>
+            <tr><td><span class="tag amber">中</span></td><td>25 - 44</td><td>0.95</td><td>轻微压制，保守一点。</td></tr>
+            <tr><td><span class="tag red">高</span></td><td>45 - 64</td><td>0.88</td><td>明显压制，降低牛鞭效应。</td></tr>
+            <tr><td><span class="tag red">极高</span></td><td>&ge; 65</td><td>0.78</td><td>强压制，需要重点复核来源。</td></tr>
+          </tbody>
+        </table>
+        <h3>4. 内部口径：SKU 风险分完整定义</h3>
+        <p>SKU 风险分不是销售好坏评分，而是“需求被 MSKU 预测传导后是否容易被放大”的风险评分。分数越高，越说明来源复杂或波动传导风险高，系统会更保守。</p>
+        <table>
+          <thead><tr><th>影响项</th><th>加分规则</th><th>为什么影响风险</th></tr></thead>
+          <tbody>
+            <tr><td>来源 MSKU 数</td><td>4-8 个 +10；9-20 个 +20；超过 20 个 +30。</td><td>一个 SKU 被越多 MSKU 拉动，任一 MSKU 的误差都会叠加到 SKU 需求上。</td></tr>
+            <tr><td>来源 Type 数</td><td>2-3 个 +8；4 个及以上 +15。</td><td>跨类目来源越多，需求口径越混杂，预测传导更不稳定。</td></tr>
+            <tr><td>低稳定/样本不足来源占比</td><td>占比 20%-50% +10；超过 50% +20。</td><td>来源 MSKU 本身不稳定时，映射到 SKU 后更容易产生牛鞭效应。</td></tr>
+            <tr><td>人工调整来源占比</td><td>占比 20%-50% +10；超过 50% +20。</td><td>如果来源 MSKU 很多已经被人工调整，说明原始模型不确定性更高。</td></tr>
+            <tr><td>月度增长过快</td><td>任一月份环比增长超过 30% +10；超过 60% +20。</td><td>SKU 需求突然跳涨，容易导致过量备货或误判真实需求。</td></tr>
+            <tr><td>活动/清仓来源</td><td>存在活动或清仓来源 +10。</td><td>活动和清仓通常不可持续，不应完全外推到常规需求。</td></tr>
+            <tr><td>迭代转入来源</td><td>存在转入 +8；转入来源达到 3 个及以上 +12。</td><td>清库/停售 SKU 的需求转到新 SKU，会增加聚合风险和识别难度。</td></tr>
+          </tbody>
+        </table>
+        <div class="formula">风险分 = 来源MSKU分 + 来源Type分 + 低稳定占比分 + 人工调整占比分 + 月增幅分 + 活动清仓分 + 迭代转入分
+系统平衡版 = 映射版本 × 风险平衡系数
+人工终版 = 有人工直改则取直改；否则 系统平衡版 × SKU系数 × 月度系数 + 加减量</div>
+        <table>
+          <thead><tr><th>字段</th><th>具体口径</th><th>查看位置</th></tr></thead>
+          <tbody>
+            <tr><td>来源MSKU</td><td>当前 SKU 的需求来自多少个唯一 MSKU。</td><td>SKU预测总表、详情、来源追溯。</td></tr>
+            <tr><td>来源Type</td><td>来源 MSKU 覆盖多少个唯一 Type。</td><td>SKU预测总表、详情、来源追溯。</td></tr>
+            <tr><td>映射需求</td><td>所有来源 MSKU 预测 × 映射用量 后的月度合计。</td><td>趋势图、SKU预测总表、来源明细。</td></tr>
+            <tr><td>系统平衡后</td><td>映射需求乘以风险平衡系数后的结果。</td><td>趋势图、SKU预测总表。</td></tr>
+            <tr><td>风险原因</td><td>触发风险加分的主要因素，例如来源多、跨Type、月增幅高、活动清仓、迭代转入。</td><td>异常 SKU 看板、详情、风险提示。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="fields" class="panel">
+        <h2>五、关键字段解释</h2>
+        <table>
+          <thead><tr><th>字段</th><th>所在系统</th><th>含义</th><th>受什么影响</th></tr></thead>
+          <tbody>
+            <tr><td>公式预测销量</td><td>MSKU</td><td>系统基于历史销量、SI、稳定度和趋势算出的模型预测。</td><td>历史销量、异常清洗、SI、趋势和稳定度。</td></tr>
+            <tr><td>最终预测销量</td><td>MSKU</td><td>用于销售额汇总和传给 SKU 系统的最终销量。</td><td>公式预测、Type目标、活动加量、人工直改。</td></tr>
+            <tr><td>最终预测销售额</td><td>MSKU</td><td>最终预测销量乘以价格。</td><td>最终销量和价格。</td></tr>
+            <tr><td>映射需求</td><td>SKU</td><td>MSKU 最终预测通过映射用量传导到 SKU 后的需求。</td><td>MSKU最终预测、映射关系、用量、迭代转入。</td></tr>
+            <tr><td>系统平衡</td><td>SKU</td><td>映射需求经过风险系数压制后的需求。</td><td>风险分、风险等级、平衡系数。</td></tr>
+            <tr><td>人工终版</td><td>SKU</td><td>默认等于系统平衡版；人工修改后作为最终 SKU 需求。</td><td>SKU系数、月度系数、加减量、直改。</td></tr>
+            <tr><td>来源MSKU</td><td>SKU</td><td>当前 SKU 的需求来自多少个 MSKU。</td><td>映射表和最终聚合关系。</td></tr>
+            <tr><td>来源Type</td><td>SKU</td><td>当前 SKU 的需求跨多少个 Type。</td><td>来源 MSKU 的 Type。</td></tr>
+            <tr><td>风险原因</td><td>SKU</td><td>系统判断该 SKU 高风险的主要原因。</td><td>来源复杂度、稳定性、增长、活动、迭代等。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="adjust" class="panel">
+        <h2>六、人工调整规则</h2>
+        <h3>MSKU 端</h3>
+        <ul>
+          <li>优先在 Type 目标层做调整，适合“某个类目整体变强/变弱”的场景。</li>
+          <li>只有个别产品有特殊判断时，再进入 SKU 预测明细做单品月份直改。</li>
+          <li>调整后建议填写原因，便于后续复盘为什么和公式预测不同。</li>
+        </ul>
+        <h3>SKU 端</h3>
+        <ul>
+          <li>默认不要频繁改 SKU，先看来源和风险原因，确认系统压制是否合理。</li>
+          <li>如果运营明确知道某个 SKU 需要备多或备少，可以编辑人工终版月份值。</li>
+          <li>人工终版会覆盖系统平衡版，因此调整前要确认不是映射缺失或迭代关系错误导致的异常。</li>
+        </ul>
+        <div class="callout danger">
+          不建议直接为了“让数字变好看”而修改终版。人工调整应对应明确业务原因，例如促销、渠道策略、清仓转入、组合售卖变化或异常订单判断。
+        </div>
+      </section>
+
+      <section id="checks" class="panel">
+        <h2>七、核对与异常处理</h2>
+        <table>
+          <thead><tr><th>问题</th><th>优先检查</th><th>处理方式</th></tr></thead>
+          <tbody>
+            <tr><td>MSKU 销售额趋势异常平或异常跳</td><td>价格、Type目标、SI、人工直改。</td><td>先看月度目标分配是否应用，再看单品是否被直改。</td></tr>
+            <tr><td>SKU 生成数量明显偏少</td><td>MSKU-SKU 映射是否完整、是否加载了最新映射。</td><td>先清空 SKU 本地缓存，再导入最新 MSKU 包；仍异常则补映射。</td></tr>
+            <tr><td>提示缺映射 MSKU</td><td>映射表中是否存在对应 MSKU。</td><td>补充 MSKU-SKU 映射关系后重新生成。</td></tr>
+            <tr><td>提示清库/停售缺迭代</td><td>SKU 状态表中的迭代SKU字段。</td><td>补充迭代 SKU，系统会自动转入并聚合。</td></tr>
+            <tr><td>某 SKU 系统平衡后下降明显</td><td>风险分、来源MSKU数、来源Type、风险原因。</td><td>点击详情查看来源，不确认前不要直接改终版。</td></tr>
+            <tr><td>云端导入后和本地不一致</td><td>是否有本地缓存、云端是否有更新版本。</td><td>按提示加载云端最新，必要时清空本地缓存。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="faq" class="panel">
+        <h2>八、常见问题</h2>
+        <h3>1. 为什么 MSKU 系统已经有 3000 多条，但 SKU 系统生成数量少？</h3>
+        <p>SKU 系统只会生成“有映射关系且通过数据诊断”的 SKU。如果 MSKU 缺映射，或清库/停售 SKU 缺少迭代 SKU，系统会阻止或减少生成结果。先看数据诊断，再补映射或状态表。</p>
+
+        <h3>2. 为什么 SKU 系统的系统平衡版比映射版本低？</h3>
+        <p>这是风险平衡逻辑。来源过多、跨 Type、低稳定来源占比高、环比增长过快、活动/清仓来源或迭代转入都会提高风险分，风险越高平衡系数越低。</p>
+
+        <h3>3. 最终应该看哪个数字？</h3>
+        <p>MSKU 端看“最终预测销量/最终预测销售额”；SKU 端看“人工终版”。如果没有人工修改，SKU 人工终版默认等于系统平衡版。</p>
+
+        <h3>4. 什么时候需要人工调整？</h3>
+        <p>当运营有明确业务信息，并且系统无法从历史销量或映射关系中自动识别时才调整，例如促销、清仓、本地仓策略、组合售卖变化、异常订单剔除等。</p>
+
+        <h3>5. 保存 SKU 输入包云端前为什么会弹出数量确认？</h3>
+        <p>这是防呆提醒。保存后会覆盖 SKU 系统读取的最新输入包，弹窗会显示本次保存 MSKU 条数和有效条数，避免误把测试包或旧缓存保存到云端。</p>
+
+        <h3>6. 打开后没有数据，或者云端版本读取不到怎么办？</h3>
+        <p>先回到系统入口页填写自己的白名单邮箱并点击“检查权限”。如果未通过白名单校验，系统可能无法读取云端数据，需要联系管理员补充白名单后再刷新重试。</p>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
