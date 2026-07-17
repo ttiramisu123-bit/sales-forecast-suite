@@ -8,6 +8,41 @@ const DEFAULT_SI = {
   "全部": [0.91, 0.96, 1.32, 1.14, 1.03, 0.99, 0.96, 1.0, 1.05, 1.1, 1.15, 1.05],
 };
 
+const CONNECTOR_OPTIMIZED_SI = [1.19, 1.11, 1.31, 1.31, 1.21, 0.83, 0.81, 0.8, 0.85, 0.82, 0.96, 0.79];
+const PTFE_OPTIMIZED_SI = [0.96, 1.06, 1.3, 1.28, 1.25, 1.1, 0.86, 0.91, 0.83, 0.89, 1.04, 0.93];
+const FUEL_CELL_TANK_OPTIMIZED_SI = [0.97, 1.12, 1.21, 1.33, 0.96, 0.9, 0.9, 0.84, 0.88, 0.96, 0.91, 0.89];
+
+const OPTIMIZED_SI_OVERRIDES = {
+  "Quick Disconnect EFI Fittings": CONNECTOR_OPTIMIZED_SI,
+  "Quick Disconnect EFT Fittings": CONNECTOR_OPTIMIZED_SI,
+  "AN to Barb Fittings": CONNECTOR_OPTIMIZED_SI,
+  "PTFE Fitting Kits": CONNECTOR_OPTIMIZED_SI,
+  "Fuel Cell Fitting Adapters": CONNECTOR_OPTIMIZED_SI,
+  "ORB Male Plug Fitting": CONNECTOR_OPTIMIZED_SI,
+  "AN to NPT Fittings": CONNECTOR_OPTIMIZED_SI,
+  "AN to INV Fittings": CONNECTOR_OPTIMIZED_SI,
+  "M to Barb Fittings": CONNECTOR_OPTIMIZED_SI,
+  "AN to UNF Fittings": CONNECTOR_OPTIMIZED_SI,
+  "Fittings|V Band Clamp|V Band Clamp": CONNECTOR_OPTIMIZED_SI,
+  "AN to AN with NPT Fittings": CONNECTOR_OPTIMIZED_SI,
+  "Swivel Hose End Fitting Kits": CONNECTOR_OPTIMIZED_SI,
+  "Weld on Hose Barb Fittings": CONNECTOR_OPTIMIZED_SI,
+  "Swivel Hose End Fittings": CONNECTOR_OPTIMIZED_SI,
+  "PTFE Fuel Line Kits": PTFE_OPTIMIZED_SI,
+  "PTFE Fuel Lines": PTFE_OPTIMIZED_SI,
+  "Hose & Line|PTFE Fuel Line|PTFE Fuel Line": PTFE_OPTIMIZED_SI,
+  "Fuel Cell Tank": FUEL_CELL_TANK_OPTIMIZED_SI,
+  "Fuel Cell Tank Kits": FUEL_CELL_TANK_OPTIMIZED_SI,
+};
+
+function applyOptimizedSiOverrides(si) {
+  const next = structuredClone(si || DEFAULT_SI);
+  Object.entries(OPTIMIZED_SI_OVERRIDES).forEach(([type, values]) => {
+    next[type] = [...values];
+  });
+  return next;
+}
+
 const STABILITY = {
   high: { name: "高稳定", cv: 0.35, recent: 0.55, category: 0.45, season: 0.65, up: 0.18, peak: 0.4, down: 0.18, target: 1.1 },
   mid: { name: "中稳定", cv: 0.8, recent: 0.45, category: 0.55, season: 0.5, up: 0.22, peak: 0.48, down: 0.22, target: 1.0 },
@@ -63,7 +98,7 @@ const state = {
     si: true,
   },
   pendingImport: null,
-  si: structuredClone(DEFAULT_SI),
+  si: applyOptimizedSiOverrides(DEFAULT_SI),
   missingSiTypes: [],
   historicForecast: new Map(),
   promoCalendar: {
@@ -2726,7 +2761,7 @@ function loadProject(project) {
   state.editingSku = "";
   state.pendingGlobalMonths = new Set(project.pendingGlobalMonths || []);
   state.pendingTargetCells = new Set(project.pendingTargetCells || []);
-  state.si = project.si || structuredClone(DEFAULT_SI);
+  state.si = applyOptimizedSiOverrides(project.si || DEFAULT_SI);
   state.promoCalendar = {
     monthlyRates: new Map(Object.entries(project.promoCalendar?.monthlyRates || {}).map(([k, v]) => [k, toNumber(v)])),
     notes: new Map(Object.entries(project.promoCalendar?.notes || {})),
