@@ -177,6 +177,21 @@ body.sidebar-collapsed .sidebar-toggle {
   margin: 6px 0 2px;
   word-break: break-all;
 }
+.file-name.success {
+  color: #bbf7d0;
+}
+.file-name.error {
+  color: #fecaca;
+}
+.draft-action.hidden {
+  display: none;
+}
+.draft-action {
+  margin-top: 8px;
+}
+.local-draft-status {
+  margin-top: 8px;
+}
 .check-line {
   display: flex;
   align-items: center;

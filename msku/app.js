@@ -88,13 +88,16 @@ const els = Object.fromEntries([
   "metricRevenueMom", "metricAdjusted", "metricMissingSi", "scopeSelect", "entitySelect",
   "metricSelect", "trendCanvas", "trendTooltip", "trendLegend", "chartDataHeader", "chartDataRows", "currentMonthLabel", "typeRows", "siEditor", "applySi",
   "stabilityFilter", "sortSelect", "bulkSkuInput", "bulkTypeInput", "ownerFilterInput", "bulkFilterSummary", "bulkFilterTags", "clearBulkFilter", "skuHeaderRow", "skuRows", "skuPageInfo", "skuPageSize", "skuPrevPage", "skuNextPage", "skuPageNumbers", "detailTitle", "clearManual", "clearMonthManual", "skuCanvas", "breakdown",
-  "cloudApiUrl", "saveCloudConfig", "testCloudConfig", "cloudUserEmail", "cloudUserName", "cloudNote", "cloudLoadLatest", "cloudSaveProject", "cloudSaveSkuPackage", "cloudListVersions", "cloudStatus",
+  "cloudApiUrl", "saveCloudConfig", "testCloudConfig", "cloudUserEmail", "cloudUserName", "cloudNote", "cloudLoadLatest", "cloudSaveProject", "cloudSaveSkuPackage", "cloudListVersions", "cloudStatus", "localDraftStatus", "loadCloudNewestFromDraft", "clearLocalDraft", "openSkuConsole",
 ].map((id) => [id, document.getElementById(id)]));
 
 const numberFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 });
 const moneyFmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const pctFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
 const DEFAULT_CLOUD_API_URL = "https://script.google.com/macros/s/AKfycbw8tdGygnGW8Zqa2TVZKFB6VmnB0hy47s40Wr3_JyD-T4GQr2WZQDsFEJnjtih3k_yW_Q/exec";
+const LOCAL_DRAFT_KEY = "salesForecastSuite.msku.localDraft.v1";
+let localDraftSaveTimer = null;
+let localDraftCloudVersion = {};
 
 function compactMoney(value) {
   if (!value || value < 0) return "$0";
@@ -119,6 +122,22 @@ function setLoading(visible, text = "处理中...") {
   els.loadingOverlay.classList.toggle("show", Boolean(visible));
 }
 
+function setButtonLoading(button, loading, text = "处理中...") {
+  if (!button) return;
+  if (!button.dataset.idleText) button.dataset.idleText = button.textContent;
+  button.disabled = Boolean(loading);
+  button.textContent = loading ? text : button.dataset.idleText;
+}
+
+async function withButtonLoading(button, text, task) {
+  setButtonLoading(button, true, text);
+  try {
+    return await task();
+  } finally {
+    setButtonLoading(button, false);
+  }
+}
+
 function waitForPaint() {
   return new Promise((resolve) => {
     const raf = window.requestAnimationFrame || ((callback) => setTimeout(callback, 0));
@@ -134,6 +153,140 @@ function setCloudStatus(message, type = "") {
   if (!els.cloudStatus) return;
   els.cloudStatus.textContent = message;
   els.cloudStatus.className = `cloud-status ${type}`.trim();
+}
+
+function setSkuConsoleLinkVisible(visible) {
+  if (!els.openSkuConsole) return;
+  els.openSkuConsole.classList.toggle("hidden", !visible);
+}
+
+function setCloudNewestPromptVisible(visible) {
+  if (!els.loadCloudNewestFromDraft) return;
+  els.loadCloudNewestFromDraft.classList.toggle("hidden", !visible);
+}
+
+function formatLocalDateTime(value) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function versionTime(value) {
+  const time = Date.parse(value || "");
+  return Number.isFinite(time) ? time : 0;
+}
+
+function setLocalDraftStatus(message, type = "") {
+  if (!els.localDraftStatus) return;
+  els.localDraftStatus.textContent = message;
+  els.localDraftStatus.className = `cloud-status local-draft-status ${type}`.trim();
+}
+
+function localDraftUiState() {
+  return {
+    selectedMonth: state.selectedMonth,
+    selectedSku: state.selectedSku,
+    scope: state.scope,
+    metric: state.metric,
+    skuPage: state.skuPage,
+    skuPageSize: state.skuPageSize,
+    filters: { ...state.filters },
+    chartVisible: { ...state.chartVisible },
+  };
+}
+
+function applyLocalDraftUiState(ui = {}) {
+  state.selectedMonth = ui.selectedMonth || state.selectedMonth;
+  state.selectedSku = ui.selectedSku || state.selectedSku;
+  state.scope = ui.scope || state.scope;
+  state.metric = ui.metric || state.metric;
+  state.skuPage = Number(ui.skuPage) || state.skuPage || 1;
+  state.skuPageSize = Number(ui.skuPageSize) || state.skuPageSize || 100;
+  state.filters = { ...state.filters, ...(ui.filters || {}) };
+  state.chartVisible = { ...state.chartVisible, ...(ui.chartVisible || {}) };
+}
+
+function readLocalDraft() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_DRAFT_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalDraftNow() {
+  if (!state.rawRows.length) return;
+  const updatedAt = new Date().toISOString();
+  const payload = {
+    version: 1,
+    updatedAt,
+    cloudVersion: localDraftCloudVersion,
+    project: { ...projectObject(), ui: localDraftUiState() },
+  };
+  try {
+    localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(payload));
+    setLocalDraftStatus(`本地草稿已保存：${formatLocalDateTime(updatedAt)}`, "success");
+  } catch (error) {
+    setLocalDraftStatus("本地草稿保存失败，可能已超过浏览器容量。", "error");
+  }
+}
+
+function scheduleLocalDraftSave() {
+  if (!state.rawRows.length) return;
+  clearTimeout(localDraftSaveTimer);
+  localDraftSaveTimer = setTimeout(saveLocalDraftNow, 800);
+}
+
+function setLocalDraftCloudVersion(version = {}) {
+  localDraftCloudVersion = {
+    versionId: version.version_id || "",
+    savedAt: version.saved_at || "",
+    savedBy: version.saved_by || "",
+  };
+}
+
+function restoreLocalDraft() {
+  const draft = readLocalDraft();
+  if (!draft?.project?.rawRows?.length) return false;
+  try {
+    localDraftCloudVersion = draft.cloudVersion || {};
+    loadProject(draft.project);
+    setLocalDraftStatus(`已恢复本地草稿：${formatLocalDateTime(draft.updatedAt)}`, "success");
+    showToast("已恢复本地草稿，正在后台检查云端版本。", "success");
+    return true;
+  } catch (error) {
+    setLocalDraftStatus("本地草稿恢复失败，可清空缓存后重新导入。", "error");
+    return false;
+  }
+}
+
+async function checkCloudVersionAgainstLocalDraft() {
+  const draft = readLocalDraft();
+  if (!draft?.project?.rawRows?.length || !cloudApiUrl()) return;
+  try {
+    const data = await cloudRequest("latest", { dataset_type: "msku_project" });
+    const version = data.version || {};
+    const cloudTime = versionTime(version.saved_at);
+    const baseTime = versionTime(draft.cloudVersion?.savedAt) || versionTime(draft.updatedAt);
+    if (cloudTime && baseTime && cloudTime > baseTime) {
+      setLocalDraftStatus(`云端有更新版本：${version.saved_by || "--"} ${formatLocalDateTime(version.saved_at)}`, "error");
+      setCloudNewestPromptVisible(true);
+    } else {
+      setCloudNewestPromptVisible(false);
+    }
+  } catch {
+    setLocalDraftStatus(`已恢复本地草稿：${formatLocalDateTime(draft.updatedAt)}，云端检查未完成`, "");
+  }
+}
+
+function clearLocalDraft() {
+  clearTimeout(localDraftSaveTimer);
+  localStorage.removeItem(LOCAL_DRAFT_KEY);
+  localDraftCloudVersion = {};
+  setCloudNewestPromptVisible(false);
+  setLocalDraftStatus("本地草稿已清空。", "success");
+  showToast("本地缓存已清空，当前页面数据不受影响。", "success");
 }
 
 function cloudApiUrl() {
@@ -1103,6 +1256,7 @@ function renderAll() {
   renderChartDataTable();
   drawTrend();
   drawSkuChart();
+  scheduleLocalDraftSave();
 }
 
 function syncFilterInputs() {
@@ -2298,19 +2452,27 @@ function projectObject() {
       typeTargetOverride: Object.fromEntries(state.adjustments.typeTargetOverride),
       notes: Object.fromEntries(state.adjustments.notes),
     },
+    ui: localDraftUiState(),
   };
 }
 
 function loadProject(project) {
+  const ui = project.ui || {};
   state.sourceName = project.sourceName || "项目文件";
   state.historyForecastName = project.historyForecastName || "";
   state.rawRows = project.rawRows || [];
   state.undoStack = [];
   state.redoStack = [];
-  state.skuPage = 1;
-  state.filters.bulkSkuText = "";
-  state.filters.bulkTypeText = "";
-  state.filters.ownerText = "";
+  state.skuPage = Number(ui.skuPage) || 1;
+  state.filters.bulkSkuText = ui.filters?.bulkSkuText || "";
+  state.filters.bulkTypeText = ui.filters?.bulkTypeText || "";
+  state.filters.ownerText = ui.filters?.ownerText || "";
+  state.selectedMonth = ui.selectedMonth || state.selectedMonth;
+  state.selectedSku = ui.selectedSku || "";
+  state.scope = ui.scope || state.scope;
+  state.metric = ui.metric || state.metric;
+  state.skuPageSize = Number(ui.skuPageSize) || state.skuPageSize;
+  state.chartVisible = { ...state.chartVisible, ...(ui.chartVisible || {}) };
   state.editingSku = "";
   state.pendingGlobalMonths = new Set(project.pendingGlobalMonths || []);
   state.pendingTargetCells = new Set(project.pendingTargetCells || []);
@@ -2365,6 +2527,9 @@ async function loadLatestFromCloud() {
     assertLoadableMskuProject(data.project);
     loadProject(data.project);
     const version = data.version || {};
+    setLocalDraftCloudVersion(version);
+    saveLocalDraftNow();
+    setCloudNewestPromptVisible(false);
     setCloudStatus(`已导入云端最新版本：${version.version_id || "--"}，保存人 ${version.saved_by || "--"}`, "success");
     showToast("云端最新版本已导入。", "success");
   } catch (error) {
@@ -2388,6 +2553,9 @@ async function autoLoadLatestFromCloudIfBlank() {
     assertLoadableMskuProject(data.project);
     loadProject(data.project);
     const version = data.version || {};
+    setLocalDraftCloudVersion(version);
+    saveLocalDraftNow();
+    setCloudNewestPromptVisible(false);
     setCloudStatus(`已自动导入云端最新版本：${version.version_id || "--"}，保存人 ${version.saved_by || "--"}`, "success");
     showToast("已自动导入云端最新版本。", "success");
   } catch (error) {
@@ -2443,6 +2611,9 @@ async function saveProjectToCloud() {
       project: projectObject(),
     }, "POST");
     const version = data.version || {};
+    setLocalDraftCloudVersion(version);
+    saveLocalDraftNow();
+    setCloudNewestPromptVisible(false);
     const cleanup = data.cleanup?.deleted ? `，已清理旧普通版本 ${data.cleanup.deleted} 份` : "";
     const keepLabel = version.keep_forever ? "，长期保留" : "";
     setCloudStatus(`已保存云端版本：${version.version_id || "--"}，保存人 ${savedBy}${keepLabel}${cleanup}`, "success");
@@ -2460,6 +2631,7 @@ async function saveSkuInputPackageToCloud() {
     showToast("请先导入并生成预测数据。", "error");
     return;
   }
+  setSkuConsoleLinkVisible(false);
   setLoading(true, "正在保存 SKU输入包到云端...");
   try {
     saveCloudConfig();
@@ -2475,8 +2647,10 @@ async function saveSkuInputPackageToCloud() {
     const version = data.version || {};
     const cleanup = data.cleanup?.deleted ? `，已清理旧普通版本 ${data.cleanup.deleted} 份` : "";
     setCloudStatus(`已保存 SKU输入包：${version.version_id || "--"}，保存人 ${savedBy}${cleanup}`, "success");
+    setSkuConsoleLinkVisible(true);
     showToast("SKU输入包已保存到云端。", "success");
   } catch (error) {
+    setSkuConsoleLinkVisible(false);
     setCloudStatus(error.message || "SKU输入包保存失败。", "error");
     showToast(error.message || "SKU输入包保存失败。", "error");
   } finally {
@@ -3046,11 +3220,16 @@ if (els.exportSkuInput) els.exportSkuInput.addEventListener("click", exportSkuSy
 els.exportReport.addEventListener("click", exportReport);
 els.downloadTemplate.addEventListener("click", exportTemplateXlsx);
 if (els.saveCloudConfig) els.saveCloudConfig.addEventListener("click", saveCloudConfig);
-if (els.testCloudConfig) els.testCloudConfig.addEventListener("click", testCloudConnection);
-if (els.cloudLoadLatest) els.cloudLoadLatest.addEventListener("click", loadLatestFromCloud);
-if (els.cloudSaveProject) els.cloudSaveProject.addEventListener("click", saveProjectToCloud);
-if (els.cloudSaveSkuPackage) els.cloudSaveSkuPackage.addEventListener("click", saveSkuInputPackageToCloud);
-if (els.cloudListVersions) els.cloudListVersions.addEventListener("click", listCloudVersions);
+if (els.testCloudConfig) els.testCloudConfig.addEventListener("click", () => withButtonLoading(els.testCloudConfig, "测试中...", testCloudConnection));
+if (els.cloudLoadLatest) els.cloudLoadLatest.addEventListener("click", () => withButtonLoading(els.cloudLoadLatest, "导入中...", loadLatestFromCloud));
+if (els.cloudSaveProject) els.cloudSaveProject.addEventListener("click", () => withButtonLoading(els.cloudSaveProject, "保存中...", saveProjectToCloud));
+if (els.cloudSaveSkuPackage) els.cloudSaveSkuPackage.addEventListener("click", () => withButtonLoading(els.cloudSaveSkuPackage, "保存中...", saveSkuInputPackageToCloud));
+if (els.openSkuConsole) els.openSkuConsole.addEventListener("click", () => {
+  window.open(new URL("../sku/", window.location.href).href, "_blank", "noopener");
+});
+if (els.cloudListVersions) els.cloudListVersions.addEventListener("click", () => withButtonLoading(els.cloudListVersions, "读取中...", listCloudVersions));
+if (els.loadCloudNewestFromDraft) els.loadCloudNewestFromDraft.addEventListener("click", () => withButtonLoading(els.loadCloudNewestFromDraft, "导入中...", loadLatestFromCloud));
+if (els.clearLocalDraft) els.clearLocalDraft.addEventListener("click", clearLocalDraft);
 els.clearManual.addEventListener("click", () => {
   if (!state.selectedSku) return;
   const key = adjustmentKey(state.selectedSku, state.selectedMonth);
@@ -3104,5 +3283,10 @@ window.addEventListener("resize", () => {
 });
 
 loadCloudConfig();
-renderAll();
-autoLoadLatestFromCloudIfBlank();
+const localDraftRestored = restoreLocalDraft();
+if (!localDraftRestored) {
+  renderAll();
+  autoLoadLatestFromCloudIfBlank();
+} else {
+  checkCloudVersionAgainstLocalDraft();
+}

@@ -265,6 +265,30 @@ body.sidebar-collapsed .side-card::before {
   color: #fecaca;
 }
 
+.sku-console-link.hidden {
+  display: none;
+}
+
+.sku-console-link {
+  margin-top: 8px;
+  border-color: #9ec5fe;
+  background: #e8f1ff;
+  color: #123a63;
+  font-weight: 700;
+}
+
+.draft-action.hidden {
+  display: none;
+}
+
+.draft-action {
+  margin-top: 8px;
+}
+
+.local-draft-status {
+  margin-top: 8px;
+}
+
 .inline {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

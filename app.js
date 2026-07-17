@@ -31,6 +31,22 @@ function setAuthStatus(message, type = "") {
   els.authStatus.className = `status ${type}`.trim();
 }
 
+function setButtonLoading(button, loading, text = "处理中...") {
+  if (!button) return;
+  if (!button.dataset.idleText) button.dataset.idleText = button.textContent;
+  button.disabled = Boolean(loading);
+  button.textContent = loading ? text : button.dataset.idleText;
+}
+
+async function withButtonLoading(button, text, task) {
+  setButtonLoading(button, true, text);
+  try {
+    return await task();
+  } finally {
+    setButtonLoading(button, false);
+  }
+}
+
 async function cloudRequest(action, payload = {}) {
   const email = normalize(els.cloudUserEmail.value) || localStorage.getItem("salesForecastCloudUserEmail") || "";
   if (email) localStorage.setItem("salesForecastCloudUserEmail", email);
@@ -50,8 +66,9 @@ function versionText(version) {
 
 async function checkAuth() {
   try {
-    const data = await cloudRequest("ping");
+    const data = await cloudRequest("auth");
     const auth = data.auth || {};
+    if (!auth.email || !auth.role) throw new Error("云端未返回有效白名单授权信息。");
     setAuthStatus(`已授权：${auth.email || "--"}（${auth.role || "--"}）`, "success");
     els.roleStatus.textContent = `${auth.role || "--"}\n${auth.email || "--"}`;
     showToast("云端权限检查成功。", "success");
@@ -127,8 +144,8 @@ async function runHealthCheck() {
 }
 
 els.cloudUserEmail.value = localStorage.getItem("salesForecastCloudUserEmail") || "";
-els.checkCloudAuth.addEventListener("click", checkAuth);
-els.refreshCloudStatus.addEventListener("click", refreshCloudStatus);
-if (els.runHealthCheck) els.runHealthCheck.addEventListener("click", runHealthCheck);
+els.checkCloudAuth.addEventListener("click", () => withButtonLoading(els.checkCloudAuth, "检查中...", checkAuth));
+els.refreshCloudStatus.addEventListener("click", () => withButtonLoading(els.refreshCloudStatus, "刷新中...", refreshCloudStatus));
+if (els.runHealthCheck) els.runHealthCheck.addEventListener("click", () => withButtonLoading(els.runHealthCheck, "检查中...", runHealthCheck));
 
 if (els.cloudUserEmail.value) refreshCloudStatus();
