@@ -731,6 +731,139 @@ function averagePositiveGrowth(cleaned) {
   return average(gains);
 }
 
+function sumValues(values) {
+  return values.reduce((sum, value) => sum + Math.max(0, toNumber(value)), 0);
+}
+
+function layerName(layer) {
+  if (layer === "head") return "头部";
+  if (layer === "middle") return "中部";
+  return "尾部";
+}
+
+function buildSalesLayerMap(rows) {
+  const items = rows.map((row) => {
+    const cleaned = cleanSeries(row.history);
+    const total = sumValues(cleaned);
+    return {
+      sku: row.sku,
+      total,
+      monthlyAvg: cleaned.length ? total / cleaned.length : 0,
+    };
+  }).sort((a, b) => b.total - a.total);
+  const grandTotal = sumValues(items.map((item) => item.total));
+  const map = new Map();
+  let running = 0;
+  items.forEach((item) => {
+    running += item.total;
+    const share = grandTotal ? running / grandTotal : 1;
+    const layer = item.total <= 0 ? "tail" : share <= 0.5 ? "head" : share <= 0.8 ? "middle" : "tail";
+    map.set(item.sku, {
+      layer,
+      layerName: layerName(layer),
+      headTier: "",
+      historyTotal: item.total,
+      historyMonthlyAvg: item.monthlyAvg,
+    });
+  });
+
+  const headItems = items.filter((item) => map.get(item.sku)?.layer === "head");
+  const superHeadCount = Math.max(1, Math.ceil(headItems.length * 0.1));
+  headItems.forEach((item, index) => {
+    const profile = map.get(item.sku);
+    if (!profile) return;
+    profile.headTier = index < superHeadCount || item.monthlyAvg >= 80 ? "super" : "normal";
+  });
+  return map;
+}
+
+function calibrationBucketKey(type, layer) {
+  return `${type || "未分类"}|${layer || "all"}`;
+}
+
+function addCalibrationBucket(buckets, key, actual, predicted) {
+  if (!buckets.has(key)) buckets.set(key, { actual: 0, predicted: 0 });
+  const bucket = buckets.get(key);
+  bucket.actual += Math.max(0, toNumber(actual));
+  bucket.predicted += Math.max(0, toNumber(predicted));
+}
+
+function buildRollingCalibration(rows, historyMonths, layerMap) {
+  const buckets = new Map();
+  const validationIndexes = [historyMonths.length - 2, historyMonths.length - 1].filter((index) => index >= 3);
+  validationIndexes.forEach((validationIndex) => {
+    const month = historyMonths[validationIndex];
+    const trainingRows = rows.map((row) => ({ ...row, history: row.history.slice(0, validationIndex) }));
+    const trainingTypeTrends = buildTypeTrendMap(trainingRows);
+    trainingRows.forEach((trainingRow, index) => {
+      const sourceRow = rows[index];
+      const cleanedActual = cleanSeries(sourceRow.history);
+      const actual = cleanedActual[validationIndex] || 0;
+      const raw = computeRawBaseForecast(trainingRow, [month], trainingTypeTrends.get(trainingRow.type));
+      const predicted = raw.forecast[month]?.formulaUnits || 0;
+      if (!actual && !predicted) return;
+      const layer = layerMap.get(sourceRow.sku)?.layer || "tail";
+      addCalibrationBucket(buckets, calibrationBucketKey(sourceRow.type, layer), actual, predicted);
+      addCalibrationBucket(buckets, calibrationBucketKey(sourceRow.type, "all"), actual, predicted);
+      addCalibrationBucket(buckets, calibrationBucketKey("__all__", layer), actual, predicted);
+      addCalibrationBucket(buckets, calibrationBucketKey("__all__", "all"), actual, predicted);
+    });
+  });
+
+  const ratios = new Map();
+  buckets.forEach((bucket, key) => {
+    if (bucket.predicted <= 0) return;
+    ratios.set(key, clamp(bucket.actual / bucket.predicted, 0.85, 1.35));
+  });
+  return ratios;
+}
+
+function calibrationRatio(type, layer, calibration) {
+  return calibration.get(calibrationBucketKey(type, layer))
+    ?? calibration.get(calibrationBucketKey(type, "all"))
+    ?? calibration.get(calibrationBucketKey("__all__", layer))
+    ?? calibration.get(calibrationBucketKey("__all__", "all"))
+    ?? 1;
+}
+
+function recentBrakeStats(cleaned) {
+  const recent = cleaned.slice(-4).reverse();
+  const weights = [0.4, 0.3, 0.2, 0.1];
+  const weightedItems = recent.map((value, index) => ({ value, weight: weights[index] || 0 }));
+  const recentWeighted = averageWeighted(weightedItems) || 0;
+  const historyMonthlyAvg = cleaned.length ? sumValues(cleaned) / cleaned.length : 0;
+  const rawRecentRatio = historyMonthlyAvg ? recentWeighted / historyMonthlyAvg : (recentWeighted > 0 ? 1 : 0);
+  const brakeRatio = clamp(rawRecentRatio, 0.35, 1);
+  const recentTwoActive = cleaned.slice(-2).some((value) => value > 0);
+  return {
+    recentWeighted,
+    historyMonthlyAvg,
+    rawRecentRatio,
+    brakeRatio,
+    recentTwoActive,
+  };
+}
+
+function recentBrakeFactor(layer, stats) {
+  const influence = layer === "head" ? 0.35 : layer === "middle" ? 0.65 : 1;
+  return 1 + (stats.brakeRatio - 1) * influence;
+}
+
+function recentGrowthRewardFactor(layer, stats) {
+  if (stats.rawRecentRatio < 1.3 || stats.recentWeighted <= 0) return 1;
+  if (layer === "head") return 1.05;
+  if (layer === "middle") return 1.08;
+  return 1;
+}
+
+function buildForecastOptimizationContext(rows, historyMonths) {
+  const layerMap = buildSalesLayerMap(rows);
+  return {
+    layerMap,
+    calibration: buildRollingCalibration(rows, historyMonths, layerMap),
+  };
+}
+
 function findSiProfile(type) {
   if (state.si[type]) {
     const source = state.missingSiTypes.includes(type) ? "全部默认" : "精确匹配";
@@ -771,6 +904,7 @@ function buildForecast(rows) {
   if (!historyColumns.length) throw new Error("未识别到历史月份列。请使用 2025-07 这种月份列名。");
   const latest = historyColumns[historyColumns.length - 1].month;
   const forecastMonths = Array.from({ length: MONTH_COUNT }, (_, i) => addMonths(latest, i + 1));
+  const historyMonths = historyColumns.map((col) => col.month);
   const normalized = rows.map((row) => {
     const values = Object.values(row);
     const sku = normalize(pick(row, ["SKU", "MSKU", "SKU编码", "Item"]) || values[0]);
@@ -784,10 +918,11 @@ function buildForecast(rows) {
 
   ensureSiTypes([...new Set(normalized.map((row) => row.type))]);
   const typeTrends = buildTypeTrendMap(normalized);
+  const optimization = buildForecastOptimizationContext(normalized, historyMonths);
 
-  state.historyMonths = historyColumns.map((col) => col.month);
+  state.historyMonths = historyMonths;
   state.months = forecastMonths;
-  state.rows = normalized.map((row) => forecastSku(row, forecastMonths, typeTrends.get(row.type)));
+  state.rows = normalized.map((row) => forecastSku(row, forecastMonths, typeTrends.get(row.type), optimization));
   state.selectedMonth = forecastMonths.includes(state.selectedMonth) ? state.selectedMonth : forecastMonths[0];
   state.selectedSku = state.selectedSku || state.rows[0]?.sku || "";
   state.editingSku = "";
@@ -795,7 +930,7 @@ function buildForecast(rows) {
   renderAll();
 }
 
-function forecastSku(row, forecastMonths, typeTrendInfo = null) {
+function computeRawBaseForecast(row, forecastMonths, typeTrendInfo = null) {
   const { cleaned, anomalies } = cleanHistorySeries(row.history);
   const positiveAvg = average(cleaned.filter((v) => v > 0));
   const { rule, cv, active } = stabilityRule(cleaned);
@@ -846,15 +981,120 @@ function forecastSku(row, forecastMonths, typeTrendInfo = null) {
   });
 
   return {
-    ...row,
     cleaned,
-    stability: rule.name,
+    rule,
+    ruleName: rule.name,
     cv,
     activeMonths: active,
     forecast,
     breakdown,
     anomalies,
     typeTrendSeries: typeTrendInfo,
+  };
+}
+
+function optimizeFormulaUnits(row, month, rawUnits, rawMeta, optimizationContext) {
+  const layerProfile = optimizationContext?.layerMap?.get(row.sku) || {
+    layer: "tail",
+    layerName: "尾部",
+    headTier: "",
+    historyTotal: sumValues(rawMeta.cleaned),
+    historyMonthlyAvg: rawMeta.cleaned.length ? sumValues(rawMeta.cleaned) / rawMeta.cleaned.length : 0,
+  };
+  const layer = layerProfile.layer;
+  const calibration = calibrationRatio(row.type, layer, optimizationContext?.calibration || new Map());
+  const opportunityFactor = layer === "tail" ? 1 : 1.05;
+  const recentStats = recentBrakeStats(rawMeta.cleaned);
+  const brakeFactor = recentBrakeFactor(layer, recentStats);
+  const growthRewardFactor = recentGrowthRewardFactor(layer, recentStats);
+  let optimized = rawUnits * calibration * opportunityFactor * brakeFactor * growthRewardFactor;
+  const historyTotal = layerProfile.historyTotal;
+  const historyMonthlyAvg = layerProfile.historyMonthlyAvg;
+  const closeToRecent = recentStats.recentWeighted > 0
+    ? Math.abs(rawUnits - recentStats.recentWeighted) / recentStats.recentWeighted <= 0.1
+    : false;
+  let guardrail = "";
+
+  if (layer === "head") {
+    optimized = Math.max(optimized, rawUnits);
+    if (closeToRecent) {
+      const cap = rawUnits * (layerProfile.headTier === "super" ? 1.05 : 1.08);
+      optimized = Math.min(optimized, cap);
+      guardrail = layerProfile.headTier === "super" ? "超级头部防过冲" : "头部防过冲";
+    }
+  } else if (layer === "middle") {
+    optimized = Math.max(optimized, rawUnits * 0.95);
+    if (closeToRecent) {
+      optimized = Math.min(optimized, rawUnits * 1.12);
+      guardrail = "中部防过冲";
+    }
+  } else {
+    if (!recentStats.recentTwoActive && historyTotal <= 0) {
+      optimized = 0;
+      guardrail = "尾部无动销归零";
+    } else if (!recentStats.recentTwoActive && historyTotal < 15) {
+      optimized = Math.min(optimized, Math.max(historyMonthlyAvg * 0.8, 2));
+      guardrail = "尾部近2月无动销收缩";
+    } else if (historyTotal < 15) {
+      optimized = Math.min(optimized, Math.max(historyMonthlyAvg * 1.2, 4));
+      guardrail = "尾部低基数收缩";
+    } else if (historyTotal < 40) {
+      optimized = Math.min(optimized, Math.max(recentStats.recentWeighted * 1.2, 8));
+      guardrail = "尾部小体量收缩";
+    }
+  }
+
+  return {
+    units: Math.max(0, Math.round(optimized)),
+    layerProfile,
+    calibration,
+    opportunityFactor,
+    brakeFactor,
+    growthRewardFactor,
+    recentStats,
+    guardrail,
+  };
+}
+
+function forecastSku(row, forecastMonths, typeTrendInfo = null, optimizationContext = null) {
+  const raw = computeRawBaseForecast(row, forecastMonths, typeTrendInfo);
+  const forecast = {};
+  const breakdown = {};
+
+  forecastMonths.forEach((month) => {
+    const rawUnits = raw.forecast[month]?.formulaUnits || 0;
+    const optimized = optimizeFormulaUnits(row, month, rawUnits, raw, optimizationContext);
+    forecast[month] = {
+      formulaUnits: optimized.units,
+      formulaRevenue: Math.round(optimized.units * row.price),
+    };
+    breakdown[month] = {
+      ...(raw.breakdown[month] || {}),
+      rawBaseForecast: rawUnits,
+      salesLayer: optimized.layerProfile.layerName,
+      headTier: optimized.layerProfile.headTier === "super" ? "超级头部" : optimized.layerProfile.headTier === "normal" ? "普通头部" : "",
+      calibrationRatio: round(optimized.calibration, 3),
+      opportunityFactor: round(optimized.opportunityFactor, 3),
+      recentBrakeFactor: round(optimized.brakeFactor, 3),
+      growthRewardFactor: round(optimized.growthRewardFactor, 3),
+      recentWeighted: round(optimized.recentStats.recentWeighted, 2),
+      recentRatio: round(optimized.recentStats.rawRecentRatio, 3),
+      guardrail: optimized.guardrail,
+      capped: optimized.units,
+    };
+  });
+
+  return {
+    ...row,
+    cleaned: raw.cleaned,
+    stability: raw.ruleName,
+    cv: raw.cv,
+    activeMonths: raw.activeMonths,
+    forecast,
+    breakdown,
+    anomalies: raw.anomalies,
+    typeTrendSeries: raw.typeTrendSeries,
+    salesLayer: optimizationContext?.layerMap?.get(row.sku)?.layerName || "尾部",
   };
 }
 
