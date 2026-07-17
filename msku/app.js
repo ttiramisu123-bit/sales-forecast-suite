@@ -1564,6 +1564,7 @@ function renderTypeTargetPanel() {
       state.pendingGlobalMonths.add(input.dataset.month);
       input.classList.add("pending-input");
       setTargetApplyStatus("全局目标有未应用修改，点击“全局应用”后生成 Type 建议。", "pending");
+      scheduleLocalDraftSave();
     });
   });
 
@@ -1576,6 +1577,7 @@ function renderTypeTargetPanel() {
       else state.adjustments.typeTargetOverride.set(key, clamp(toNumber(value) / 100, -0.05, 0.25));
       markTypeTargetPending(input);
       setTargetApplyStatus("Type 涨幅有未应用修改，点击“类目应用”后写入 SKU。", "pending");
+      scheduleLocalDraftSave();
     });
   });
 }
@@ -1866,7 +1868,9 @@ function handleRowEditAction(action, sku) {
   }
   state.editingSku = "";
   state.selectedSku = sku;
+  showToast("正在保存修改...", "success");
   renderAfterSkuDirectEdit();
+  saveLocalDraftNow();
   showToast(`已保存 ${numberFmt.format(changed.length)} 个月份的人工覆盖。`, "success");
 }
 
@@ -2339,6 +2343,7 @@ function applyGlobalTargets() {
   renderTypeTargetPanel();
   setTargetApplyStatus(`已生成 Type 建议涨幅：${numberFmt.format(monthsToApply.length)} 个月 × ${numberFmt.format(typeCount)} 个 Type；待类目应用 ${numberFmt.format(pendingCells)} 格，手动覆盖格保持不变 ${numberFmt.format(skipped)} 个。`, "success");
   showToast("全局目标已分配到 Type 建议，尚未写入 SKU。", "success");
+  saveLocalDraftNow();
 }
 
 async function applyCategoryTargets() {
@@ -2367,6 +2372,7 @@ async function applyCategoryTargets() {
     renderAfterTargetApply();
     setTargetApplyStatus(`已应用到 SKU：${numberFmt.format(cellCount)} 个 Type/月单元，影响 ${numberFmt.format(affectedSku)} 个 SKU；手动直改单元跳过 ${numberFmt.format(directLocked)} 个。`, "success");
     showToast(`类目涨幅已应用到 SKU，人工覆盖格 ${numberFmt.format(overrideCount)} 个。`, "success");
+    saveLocalDraftNow();
   } catch (error) {
     showToast(error.message || "类目应用失败，请重试。", "error");
   } finally {
@@ -2399,6 +2405,8 @@ function applySkuFactor() {
   });
   invalidateSummaryCache();
   renderAll();
+  saveLocalDraftNow();
+  showToast("SKU 策略系数已保存。", "success");
 }
 
 function applyEventUnits() {
@@ -2418,6 +2426,8 @@ function applyEventUnits() {
   });
   invalidateSummaryCache();
   renderAll();
+  saveLocalDraftNow();
+  showToast("活动/清仓加量已保存。", "success");
 }
 
 function applySi() {
@@ -2629,6 +2639,13 @@ async function saveProjectToCloud() {
 async function saveSkuInputPackageToCloud() {
   if (!state.rows.length) {
     showToast("请先导入并生成预测数据。", "error");
+    return;
+  }
+  const mskuCount = state.rows.length;
+  const activeCount = state.rows.filter((row) => row.activeMonths > 0).length;
+  const warning = mskuCount < 1000 ? "\n\n注意：本次 MSKU 数量低于 1000，请确认当前不是测试包或旧缓存。" : "";
+  if (!confirm(`本次将保存 ${numberFmt.format(mskuCount)} 个 MSKU，其中有效 ${numberFmt.format(activeCount)} 个。\n保存后会覆盖 SKU 平台读取的最新输入包。${warning}\n\n是否继续保存？`)) {
+    setCloudStatus("SKU输入包保存已取消。", "");
     return;
   }
   setSkuConsoleLinkVisible(false);
@@ -3208,6 +3225,7 @@ els.resetTypeTargets.addEventListener("click", () => {
   renderTypeTargetPanel();
   setTargetApplyStatus("已清空 Type 人工覆盖；如需影响最终预测，请点击“类目应用”。", "pending");
   showToast(count ? `已清空 ${numberFmt.format(count)} 个 Type 人工覆盖。` : "当前没有 Type 人工覆盖。", "success");
+  saveLocalDraftNow();
 });
 if (els.applySkuFactor) els.applySkuFactor.addEventListener("click", applySkuFactor);
 if (els.applyEventUnits) els.applyEventUnits.addEventListener("click", applyEventUnits);
@@ -3238,6 +3256,8 @@ els.clearManual.addEventListener("click", () => {
   state.adjustments.directUnits.delete(key);
   state.adjustments.notes.delete(key);
   renderAfterSkuDirectEdit();
+  saveLocalDraftNow();
+  showToast("当前 SKU 当前月直改已清空并保存。", "success");
 });
 els.clearMonthManual.addEventListener("click", () => {
   const suffix = `|${state.selectedMonth}`;
@@ -3252,6 +3272,8 @@ els.clearMonthManual.addEventListener("click", () => {
     }
   });
   renderAfterSkuDirectEdit();
+  saveLocalDraftNow();
+  showToast("本月全部直改已清空并保存。", "success");
 });
 document.addEventListener("keydown", (event) => {
   const target = event.target;

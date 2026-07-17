@@ -24,6 +24,8 @@ const state = {
   },
   embeddedMappingLoaded: false,
   embeddedStatusLoaded: false,
+  manualMappingUploaded: false,
+  manualStatusUploaded: false,
   diagnostics: {
     missingMappings: [],
     missingReplacements: [],
@@ -1168,8 +1170,10 @@ function saveSkuRowEdit(sku) {
 
   state.editingSku = "";
   state.selectedSku = sku;
+  showToast("正在保存修改...", "success");
   buildForecast();
   renderAll();
+  saveLocalDraftNow();
   showToast(`已保存 ${numberFmt.format(changed.length)} 个月份的人工终版。`, "success");
 }
 
@@ -1840,8 +1844,8 @@ async function loadLatestMskuPackageFromCloud(auto = false) {
     setCloudStatus(`已导入最新MSKU预测包：${data.version?.saved_by || "--"} / ${data.version?.saved_at || "--"}`, "success");
     setLocalDraftCloudVersion(data.version || {});
     setCloudNewestPromptVisible(false);
-    if (!state.mappingRows.length) await loadEmbeddedMapping();
-    if (!state.skuStatusRows.length) await loadEmbeddedStatus();
+    if (!state.manualMappingUploaded || !state.mappingRows.length) await loadEmbeddedMapping();
+    if (!state.manualStatusUploaded || !state.skuStatusRows.length) await loadEmbeddedStatus();
     if (state.mappingRows.length) {
       await runForecast();
       saveLocalDraftNow();
@@ -2062,10 +2066,12 @@ async function handleFile(file, kind) {
     if (kind === "mapping") {
       state.mappingRows = normalizeMappingRows(dataRows(data));
       state.embeddedMappingLoaded = false;
+      state.manualMappingUploaded = true;
     }
     if (kind === "status") {
       setSkuStatusRows(dataRows(data));
       state.embeddedStatusLoaded = false;
+      state.manualStatusUploaded = true;
     }
     if (kind === "adjustment") normalizeAdjustmentRows(dataRows(data));
     if (kind === "project") loadProject(data);
@@ -2103,9 +2109,11 @@ function applyManual() {
       note: normalize(els.manualNote.value),
     });
   }
+  showToast("正在保存修改...", "success");
   buildForecast();
   state.selectedSku = sku;
   renderAll();
+  saveLocalDraftNow();
   showToast("人工调整已保存。", "success");
 }
 
@@ -2116,6 +2124,7 @@ function clearManual() {
   state.adjustments.month.delete(adjustmentKey(sku, month));
   buildForecast();
   renderAll();
+  saveLocalDraftNow();
   showToast("已清空该 SKU/月调整。", "success");
 }
 
