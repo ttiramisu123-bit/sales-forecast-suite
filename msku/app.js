@@ -1269,16 +1269,7 @@ function computeRawBaseForecast(row, forecastMonths, typeTrendInfo = null) {
   var segment = getSegment(positiveAvg);
   var segParams = SEG_PARAMS[segment] || SEG_PARAMS.mid;
 
-  // ---- Module C-ext: 尾部间歇性折扣 ----
-  var intermittentDiscount = 1;
-  if (segment === "tail") {
-    var win4 = cleaned.length >= 4 ? stripAnomaliesFromWindow(cleaned, cleaned.length - 4, cleaned.length) : cleaned;
-    var activeInWin4 = win4.filter(function(v) { return v > 0; }).length;
-    if (activeInWin4 === 0) intermittentDiscount = 0;
-    else if (activeInWin4 === 1) intermittentDiscount = 0.8;
-    else if (activeInWin4 === 2) intermittentDiscount = 0.9;
-    else intermittentDiscount = 0.95;
-  }
+  // ---- 尾部flat直接用pos_avg(不额外折扣, pos_avg已含间歇性) ----
 
   const { rule, cv, active } = stabilityRule(cleaned);
   const skuTrend = stableTrend(cleaned, 0.9, 1.12);
@@ -1297,14 +1288,13 @@ function computeRawBaseForecast(row, forecastMonths, typeTrendInfo = null) {
   forecastMonths.forEach((month) => {
     // ---- 尾部: 直接均衡, 无趋势/SI ----
     if (segment === "tail") {
-      var tailBase = positiveAvg * intermittentDiscount;
-      var formulaUnits = positiveAvg <= 0 ? 0 : Math.max(0.5, roundTo1(tailBase));
+      var tailBase = positiveAvg;
+      var formulaUnits = positiveAvg <= 0 ? 0 : roundTo1(tailBase);
       forecast[month] = { formulaUnits, formulaRevenue: Math.round(formulaUnits * row.price) };
       breakdown[month] = {
         cleanedAvg: round(positiveAvg, 2),
         segment: SEG_NAMES[segment] || segment,
         activeMonths: active,
-        intermittentDiscount: round(intermittentDiscount, 2),
         tailFlat: formulaUnits,
         rawSi: 1,
         seasonal: 1,
@@ -1801,7 +1791,10 @@ function getFinalUnits(row, month) {
   const factor = state.adjustments.skuFactor.get(key) ?? 1;
   const eventAdd = state.adjustments.eventAdd.get(key) ?? 0;
   const targetFactor = state.adjustments.typeTarget.get(`${row.type}|${month}`) ?? 1;
-  return Math.max(0, Math.round(getFormulaUnits(row, month) * factor * targetFactor * skuMicroFactor(row, month) + eventAdd));
+  var rawValue = getFormulaUnits(row, month) * factor * targetFactor * skuMicroFactor(row, month) + eventAdd;
+  // 尾部SKU保留1位小数, 其他段位取整
+  var seg = row.segment || "mid";
+  return Math.max(0, seg === "tail" ? roundTo1(rawValue) : Math.round(rawValue));
 }
 
 function getHistoricUnits(row, month) {
