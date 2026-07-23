@@ -29,35 +29,37 @@
         <input id="baseFile" type="file" accept=".csv,.json,.xls,.xlsx" />
         <div id="baseFileName" class="file-name">未选择文件</div>
 
-        <label class="file-drop secondary" for="historicForecastFile">
-          <span>导入历史预测版本</span>
-          <small>过去做好的预测，仅用于参考曲线</small>
-        </label>
-        <input id="historicForecastFile" type="file" accept=".csv,.json,.xls,.xlsx" />
-        <div id="historicForecastFileName" class="file-name">未选择文件</div>
+        <details class="side-details">
+          <summary>低频导入 / 长期维护</summary>
+          <label class="file-drop secondary" for="historicForecastFile">
+            <span>导入历史预测版本</span>
+            <small>过去做好的预测，仅用于参考曲线</small>
+          </label>
+          <input id="historicForecastFile" type="file" accept=".csv,.json,.xls,.xlsx" />
+          <div id="historicForecastFileName" class="file-name">未选择文件</div>
 
-        <label class="file-drop secondary" for="projectFile">
-          <span>加载项目 JSON</span>
-          <small>恢复上次保存的方案和调整</small>
-        </label>
-        <input id="projectFile" type="file" accept=".json" />
-        <div id="projectFileName" class="file-name">未选择文件</div>
+          <label class="file-drop secondary" for="projectFile">
+            <span>加载项目 JSON</span>
+            <small>恢复上次保存的方案和调整</small>
+          </label>
+          <input id="projectFile" type="file" accept=".json" />
+          <div id="projectFileName" class="file-name">未选择文件</div>
+
+          <label class="file-drop secondary" for="rolloverFile">
+            <span>导入新销量滚动更新</span>
+            <small>先加载旧云端项目，再选新销量文件；仅继承已锁定 SKU / 已固定 Type</small>
+          </label>
+          <input id="rolloverFile" type="file" accept=".csv,.json,.xls,.xlsx" />
+          <div id="rolloverFileName" class="file-name">未选择新销量文件</div>
+          <button id="runRolloverUpdate" type="button">导入新销量并滚动更新</button>
+        </details>
       </section>
 
-      <section class="side-card" data-short="状态">
-        <h2>2. 状态与辅助</h2>
-        <label>预测月份</label>
-        <select id="monthSelect"></select>
-        <label>辅助搜索 SKU / Type</label>
-        <input id="searchBox" type="search" placeholder="输入 SKU 或 Type" />
-        <div class="inline action-row">
-          <button id="undoAction" title="Ctrl+Z">撤销</button>
-          <button id="redoAction" title="Ctrl+Y / Ctrl+Shift+Z">重做</button>
-        </div>
-      </section>
+      <input id="searchBox" class="visually-hidden-control" type="search" value="" aria-hidden="true" tabindex="-1" />
 
       <section class="side-card" data-short="批量">
-        <h2>3. 批量导入调整</h2>
+        <details class="side-details">
+        <summary>2. 批量导入调整</summary>
         <label>模板类型</label>
         <select id="templateSelect">
           <option value="global">月度全局目标</option>
@@ -74,19 +76,22 @@
         <div id="adjustmentImportFileName" class="file-name">未选择文件</div>
         <div id="importPreview" class="import-preview">暂无待确认导入</div>
         <button id="confirmImport" type="button" disabled>确认导入</button>
+        </details>
       </section>
 
       <section class="side-card" data-short="导出">
-        <h2>4. 保存与导出</h2>
+        <h2>3. 保存与导出</h2>
         <button id="saveProject">保存项目 JSON</button>
         <button id="exportDetail">导出历史+预测 Excel</button>
         <button id="exportSkuInput">导出 SKU系统输入 Excel</button>
+        <button id="openSkuConsole" class="sku-console-link" type="button">打开 SKU 预测平台</button>
         <button id="exportReport">导出只读 HTML 报告</button>
         <button id="downloadTemplate">下载导入模板 Excel</button>
       </section>
 
       <section class="side-card" data-short="云端">
-        <h2>5. 云端同步</h2>
+        <details class="side-details">
+        <summary>4. 云端同步</summary>
         <label class="cloud-url-config">Apps Script URL</label>
         <input id="cloudApiUrl" class="cloud-url-config" type="hidden" value="https://script.google.com/macros/s/AKfycbw8tdGygnGW8Zqa2TVZKFB6VmnB0hy47s40Wr3_JyD-T4GQr2WZQDsFEJnjtih3k_yW_Q/exec" />
         <div class="inline action-row cloud-url-config">
@@ -109,7 +114,7 @@
         <div id="localDraftStatus" class="cloud-status local-draft-status">本地草稿：暂无</div>
         <button id="loadCloudNewestFromDraft" class="draft-action hidden" type="button">加载云端最新</button>
         <button id="clearLocalDraft" class="draft-action" type="button">清空本地缓存</button>
-        <button id="openSkuConsole" class="sku-console-link" type="button">打开 SKU 预测平台</button>
+        </details>
       </section>
 
       <div class="hint">
@@ -124,7 +129,12 @@
           <h1>EVIL ENERGY 销售预测工作台</h1>
           <p id="statusText">请先导入基础模板。</p>
         </div>
-        <div class="version">v1 本机离线</div>
+        <div class="topbar-actions">
+          <label class="topbar-month">预测月份 <select id="monthSelect"></select></label>
+          <button id="undoAction" class="topbar-button" title="Ctrl+Z">撤销</button>
+          <button id="redoAction" class="topbar-button" title="Ctrl+Y / Ctrl+Shift+Z">重做</button>
+          <div class="version">v1 本机离线</div>
+        </div>
       </header>
 
       <section class="metrics">
@@ -134,6 +144,11 @@
         <article><span>最终预测销售额</span><strong id="metricRevenue">$0</strong><small id="metricRevenueMom">环比 --</small></article>
         <article><span>人工修正 SKU</span><strong id="metricAdjusted">0</strong><small>系数/加量/直改</small></article>
         <article><span>SI 缺失类目</span><strong id="metricMissingSi">0</strong><small>需补充指数</small></article>
+        <article id="lockSummaryCard" class="metric-action-card" role="button" tabindex="0">
+          <span>锁定汇总</span>
+          <strong id="metricLockSummary">0 / 0</strong>
+          <small id="metricLockLatest">固定Type / 锁定SKU</small>
+        </article>
       </section>
 
       <section class="panel monthly-bar-panel">
@@ -153,12 +168,20 @@
             <p>按月份设置全局涨幅，再按 Type 稳定度和趋势分配；手动目标为空时使用建议值。</p>
           </div>
           <div class="toolbar">
+            <select id="targetLockFilter" title="Type固定筛选">
+              <option value="all">全部Type</option>
+              <option value="locked">已固定Type</option>
+              <option value="unlocked">未固定Type</option>
+            </select>
+            <button id="lockSelectedTypes" type="button" disabled>固定已选Type</button>
+            <button id="unlockSelectedTypes" type="button" disabled>取消固定</button>
             <button id="applyGlobalTargets" type="button">全局应用</button>
             <button id="applyCategoryTargets" type="button">类目应用</button>
             <button id="resetTypeTargets" type="button">清空人工覆盖</button>
           </div>
         </div>
         <div id="targetApplyStatus" class="target-apply-status">先填写全局目标，点“全局应用”生成 Type 建议；确认后点“类目应用”写入 SKU。</div>
+        <div id="rolloverLog" class="target-apply-status hidden"></div>
         <div class="target-table-wrap">
           <table class="target-table">
             <thead>
@@ -167,43 +190,6 @@
             <tbody id="typeTargetRows"></tbody>
           </table>
         </div>
-      </section>
-
-      <section class="grid two">
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <h2>Type/类目销售额汇总趋势</h2>
-              <p>当前月份：<span id="currentMonthLabel">--</span></p>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table class="type-summary-table">
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>公式销量</th>
-                  <th>最终销量</th>
-                  <th>最终销售额</th>
-                  <th>占比</th>
-                  <th>环比</th>
-                </tr>
-              </thead>
-              <tbody id="typeRows"></tbody>
-            </table>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <h2>SI 指数维护</h2>
-              <p>内置默认 SI；导入后如遇缺失类目，在这里补充 12 个月指数。</p>
-            </div>
-            <button id="applySi">保存 SI</button>
-          </div>
-          <div id="siEditor" class="si-editor"></div>
-        </article>
       </section>
 
       <section class="bulk-panel compact-filter shared-analysis-filter">
@@ -268,6 +254,13 @@
               <option value="低稳定">低稳定</option>
               <option value="样本不足">样本不足</option>
             </select>
+            <select id="skuLockFilter" title="SKU锁定筛选">
+              <option value="all">全部锁定状态</option>
+              <option value="locked">已锁定SKU</option>
+              <option value="unlocked">未锁定SKU</option>
+            </select>
+            <button id="lockSelectedSkus" type="button" disabled>锁定已选SKU</button>
+            <button id="unlockSelectedSkus" type="button" disabled>解锁已选SKU</button>
           </div>
         </div>
         <div class="table-wrap tall">
@@ -295,6 +288,46 @@
           </div>
           <div id="skuPageNumbers" class="page-numbers"></div>
         </div>
+      </section>
+
+      <section class="grid two">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Type/类目销售额汇总趋势</h2>
+              <p>汇总月份：<span id="currentMonthLabel">--</span></p>
+            </div>
+            <div class="toolbar">
+              <select id="typeSummaryMonthSelect" title="类目汇总月份"></select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="type-summary-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>公式销量</th>
+                  <th>最终销量</th>
+                  <th>最终销售额</th>
+                  <th>占比</th>
+                  <th>环比</th>
+                </tr>
+              </thead>
+              <tbody id="typeRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>SI 指数维护</h2>
+              <p>内置默认 SI；导入后如遇缺失类目，在这里补充 12 个月指数。</p>
+            </div>
+            <button id="applySi">保存 SI</button>
+          </div>
+          <div id="siEditor" class="si-editor"></div>
+        </article>
       </section>
 
       <section class="panel">

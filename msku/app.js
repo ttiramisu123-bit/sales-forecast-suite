@@ -50,6 +50,30 @@ const STABILITY = {
   short: { name: "样本不足", cv: Infinity, recent: 0.1, category: 0.9, season: 0.28, up: 0.25, peak: 0.45, down: 0.25, target: 0.4 },
 };
 
+// ---- Module C: 五段差异化配置 ----
+function getSegment(recentAvg) {
+  if (recentAvg >= 50) return "head";
+  if (recentAvg >= 30) return "midhi";
+  if (recentAvg >= 15) return "mid";
+  if (recentAvg >= 5)  return "midlo";
+  return "tail";
+}
+
+var SEG_PARAMS = {
+  head:  { brakeLo: 0.55, brakeHi: 1.15, rewardMax: 0.04, trendMult: 1.02, influence: 0.35 },
+  midhi: { brakeLo: 0.40, brakeHi: 1.10, rewardMax: 0.03, trendMult: 1.01, influence: 0.45 },
+  mid:   { brakeLo: 0.40, brakeHi: 1.05, rewardMax: 0.02, trendMult: 1.00, influence: 0.55 },
+  midlo: { brakeLo: 0.40, brakeHi: 1.00, rewardMax: 0.01, trendMult: 0.95, influence: 0.75 },
+  tail:  { brakeLo: 0.35, brakeHi: 1.00, rewardMax: 0.00, trendMult: 0.88, influence: 1.00 },
+};
+
+var SEG_NAMES = { head: "头部", midhi: "中上", mid: "中部", midlo: "中下", tail: "尾部" };
+
+// ---- 轻SI + 趋势延伸 参数 ----
+var LIGHT_SI_FACTOR = 0.3;       // 非PTFE保留30%原SI影响 (替代SI=1)
+var PROGRESSIVE_BLEND_MONTHS = 6; // 从近4月均值渐进过渡到trendAvg的月数
+var IS_PEAK_THRESHOLD = 1.05;     // 轻SI下的peak判定阈值 (原1.12过于激进)
+
 const CHART_SERIES = {
   history: { label: "历史销量", color: "#64748b", dash: [5, 5], type: "units" },
   formula: { label: "公式预测", color: "#1e5aa7", dash: [], type: "units" },
@@ -66,6 +90,7 @@ const state = {
   months: [],
   historyMonths: [],
   selectedMonth: "",
+  typeSummaryMonth: "",
   selectedSku: "",
   scope: "overall",
   metric: "units",
@@ -75,8 +100,17 @@ const state = {
     bulkSkuText: "",
     bulkTypeText: "",
     ownerText: "",
+    skuLockStatus: "all",
+    typeLockStatus: "all",
   },
   editingSku: "",
+  lockedTypes: new Map(),
+  lockedSkus: new Map(),
+  selectedLockTypes: new Set(),
+  selectedLockSkus: new Set(),
+  pendingRolloverRows: null,
+  pendingRolloverName: "",
+  rolloverLog: null,
   undoStack: [],
   redoStack: [],
   microCache: new Map(),
@@ -116,19 +150,30 @@ const state = {
 };
 
 const els = Object.fromEntries([
-  "sidebarToggle", "baseFile", "historicForecastFile", "projectFile", "baseFileName", "historicForecastFileName", "projectFileName", "monthSelect", "adjustScope", "applyTarget",
-  "applyGlobalTargets", "applyCategoryTargets", "targetApplyStatus", "resetTypeTargets", "targetMatrixHeader", "typeTargetRows", "searchBox", "skuFactor", "applySkuFactor", "eventUnits", "applyEventUnits", "undoAction", "redoAction", "saveProject",
+  "sidebarToggle", "baseFile", "historicForecastFile", "projectFile", "rolloverFile", "baseFileName", "historicForecastFileName", "projectFileName", "rolloverFileName", "runRolloverUpdate", "monthSelect", "adjustScope", "applyTarget",
+  "applyGlobalTargets", "applyCategoryTargets", "targetApplyStatus", "resetTypeTargets", "targetLockFilter", "lockSelectedTypes", "unlockSelectedTypes", "rolloverLog", "targetMatrixHeader", "typeTargetRows", "searchBox", "skuFactor", "applySkuFactor", "eventUnits", "applyEventUnits", "undoAction", "redoAction", "saveProject",
   "exportDetail", "exportSkuInput", "exportReport", "downloadTemplate", "templateSelect", "downloadSelectedTemplate", "adjustmentImportFile", "adjustmentImportFileName", "importPreview", "confirmImport", "toast", "loadingOverlay", "loadingText", "statusText", "metricSku", "metricActive",
   "metricFormulaUnits", "metricFormulaMom", "metricFinalUnits", "metricFinalMom", "metricRevenue",
-  "metricRevenueMom", "metricAdjusted", "metricMissingSi", "scopeSelect", "entitySelect",
-  "metricSelect", "trendCanvas", "trendTooltip", "trendLegend", "chartDataHeader", "chartDataRows", "currentMonthLabel", "typeRows", "siEditor", "applySi",
-  "stabilityFilter", "sortSelect", "bulkSkuInput", "bulkTypeInput", "ownerFilterInput", "bulkFilterSummary", "bulkFilterTags", "clearBulkFilter", "skuHeaderRow", "skuRows", "skuPageInfo", "skuPageSize", "skuPrevPage", "skuNextPage", "skuPageNumbers", "detailTitle", "clearManual", "clearMonthManual", "skuCanvas", "breakdown",
+  "metricRevenueMom", "metricAdjusted", "metricMissingSi", "metricLockSummary", "metricLockLatest", "lockSummaryCard", "scopeSelect", "entitySelect",
+  "metricSelect", "trendCanvas", "trendTooltip", "trendLegend", "chartDataHeader", "chartDataRows", "currentMonthLabel", "typeSummaryMonthSelect", "typeRows", "siEditor", "applySi",
+  "stabilityFilter", "skuLockFilter", "sortSelect", "bulkSkuInput", "bulkTypeInput", "ownerFilterInput", "bulkFilterSummary", "bulkFilterTags", "clearBulkFilter", "lockSelectedSkus", "unlockSelectedSkus", "skuHeaderRow", "skuRows", "skuPageInfo", "skuPageSize", "skuPrevPage", "skuNextPage", "skuPageNumbers", "detailTitle", "clearManual", "clearMonthManual", "skuCanvas", "breakdown",
   "cloudApiUrl", "saveCloudConfig", "testCloudConfig", "cloudUserEmail", "cloudUserName", "cloudNote", "cloudLoadLatest", "cloudSaveProject", "cloudSaveSkuPackage", "cloudListVersions", "cloudStatus", "localDraftStatus", "loadCloudNewestFromDraft", "clearLocalDraft", "openSkuConsole",
 ].map((id) => [id, document.getElementById(id)]));
 
-const numberFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 });
+const numberFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
 const moneyFmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const pctFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
+const LOCK_REASON_GROUPS = [
+  { primary: "增长机会", secondary: ["潜力品增长", "近期增量明显", "头部/中部重点机会", "新品扶持", "爆款培育"] },
+  { primary: "运营策略", secondary: ["重点推广品", "渠道/店铺策略", "类目战略调整", "组合售卖策略", "管理层要求"] },
+  { primary: "活动计划", secondary: ["活动前备货策略", "Prime Day/大促", "黑五/网一", "站外推广", "折扣/优惠券计划"] },
+  { primary: "供应链库存", secondary: ["供应链/库存策略", "本地仓备货", "安全库存要求", "补货周期较长", "清库/停售过渡"] },
+  { primary: "产品迭代", secondary: ["替代/迭代承接", "老品转新品", "套装/组合承接", "停售转入", "映射关系调整"] },
+  { primary: "数据保护", secondary: ["异常数据保护", "历史销量失真", "短期断货影响", "异常订单影响", "样本不足但需保留判断"] },
+  { primary: "价格利润", secondary: ["价格/利润策略", "涨价后保守", "降价后放量", "利润款优先", "低毛利控量"] },
+  { primary: "市场变化", secondary: ["市场外部变化", "竞品变化", "需求季节变化", "平台流量变化", "政策/物流变化"] },
+  { primary: "其他", secondary: ["其他"] },
+];
 const DEFAULT_CLOUD_API_URL = "https://script.google.com/macros/s/AKfycbw8tdGygnGW8Zqa2TVZKFB6VmnB0hy47s40Wr3_JyD-T4GQr2WZQDsFEJnjtih3k_yW_Q/exec";
 const LOCAL_DRAFT_KEY = "salesForecastSuite.msku.localDraft.v1";
 let localDraftSaveTimer = null;
@@ -221,6 +266,7 @@ function setLocalDraftStatus(message, type = "") {
 function localDraftUiState() {
   return {
     selectedMonth: state.selectedMonth,
+    typeSummaryMonth: state.typeSummaryMonth,
     selectedSku: state.selectedSku,
     scope: state.scope,
     metric: state.metric,
@@ -233,6 +279,7 @@ function localDraftUiState() {
 
 function applyLocalDraftUiState(ui = {}) {
   state.selectedMonth = ui.selectedMonth || state.selectedMonth;
+  state.typeSummaryMonth = ui.typeSummaryMonth || state.typeSummaryMonth;
   state.selectedSku = ui.selectedSku || state.selectedSku;
   state.scope = ui.scope || state.scope;
   state.metric = ui.metric || state.metric;
@@ -401,6 +448,187 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+function currentOperatorName() {
+  return normalize(els.cloudUserName?.value) || normalize(els.cloudUserEmail?.value) || "未填写";
+}
+
+function lockTitle(meta) {
+  if (!meta) return "";
+  const parts = [
+    meta.primaryReason ? `一级原因：${meta.primaryReason}` : "",
+    meta.secondaryReason ? `二级原因：${meta.secondaryReason}` : "",
+    meta.reason && !meta.secondaryReason ? `原因：${meta.reason}` : "",
+    meta.note ? `备注：${meta.note}` : "",
+    meta.by ? `操作人：${meta.by}` : "",
+    meta.at ? `时间：${formatLocalDateTime(meta.at)}` : "",
+  ].filter(Boolean);
+  return parts.join("\n");
+}
+
+function lockTag(label, kind, meta, attrs = "") {
+  return `<span class="lock-tag ${kind}" ${attrs} title="${escapeHtml(lockTitle(meta))}" role="button" tabindex="0">${label}</span>`;
+}
+
+function closeLockMetaDialog() {
+  document.querySelectorAll(".lock-meta-backdrop").forEach((node) => node.remove());
+}
+
+function closeLockDetailPopover() {
+  document.querySelectorAll(".lock-detail-popover").forEach((node) => node.remove());
+}
+
+function requestLockMeta(title) {
+  closeLockMetaDialog();
+  closeLockDetailPopover();
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "lock-meta-backdrop";
+    const options = LOCK_REASON_GROUPS.map((group, index) => `<option value="${index}">${escapeHtml(group.primary)}</option>`).join("");
+    backdrop.innerHTML = `
+      <div class="lock-meta-dialog" role="dialog" aria-modal="true">
+        <div class="lock-meta-head">
+          <strong>${escapeHtml(title)}</strong>
+          <button class="lock-meta-close" type="button" title="关闭">×</button>
+        </div>
+        <label>一级原因 *</label>
+        <select class="lock-primary">${options}</select>
+        <label>二级原因 *</label>
+        <select class="lock-secondary"></select>
+        <label>备注 <span>可自定义；选择其他时必填</span></label>
+        <textarea class="lock-note" rows="3" placeholder="补充原因、业务背景或复核说明"></textarea>
+        <div class="lock-meta-error"></div>
+        <div class="lock-meta-actions">
+          <button class="lock-cancel" type="button">取消</button>
+          <button class="lock-submit primary" type="button">确认锁定</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+
+    const primary = backdrop.querySelector(".lock-primary");
+    const secondary = backdrop.querySelector(".lock-secondary");
+    const note = backdrop.querySelector(".lock-note");
+    const error = backdrop.querySelector(".lock-meta-error");
+
+    const renderSecondary = () => {
+      const group = LOCK_REASON_GROUPS[Number(primary.value)] || LOCK_REASON_GROUPS[0];
+      secondary.innerHTML = group.secondary.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join("");
+    };
+    const finish = (value) => {
+      closeLockMetaDialog();
+      resolve(value);
+    };
+
+    primary.addEventListener("change", renderSecondary);
+    backdrop.querySelector(".lock-meta-close").addEventListener("click", () => finish(null));
+    backdrop.querySelector(".lock-cancel").addEventListener("click", () => finish(null));
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) finish(null);
+    });
+    backdrop.querySelector(".lock-submit").addEventListener("click", () => {
+      const group = LOCK_REASON_GROUPS[Number(primary.value)] || LOCK_REASON_GROUPS[0];
+      const primaryReason = normalize(group.primary);
+      const secondaryReason = normalize(secondary.value);
+      const noteText = normalize(note.value);
+      if (!primaryReason || !secondaryReason) {
+        error.textContent = "请选择一级原因和二级原因。";
+        return;
+      }
+      if ((primaryReason === "其他" || secondaryReason === "其他") && !noteText) {
+        error.textContent = "选择“其他”时，备注必填。";
+        return;
+      }
+      finish({
+        primaryReason,
+        secondaryReason,
+        reason: `${primaryReason} / ${secondaryReason}`,
+        note: noteText,
+        by: currentOperatorName(),
+        at: new Date().toISOString(),
+      });
+    });
+    renderSecondary();
+    primary.focus();
+  });
+}
+
+function requestConfirmDialog({ title, lines = [], confirmText = "确认", cancelText = "取消", danger = false } = {}) {
+  closeLockMetaDialog();
+  closeLockDetailPopover();
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "lock-meta-backdrop";
+    const messages = (Array.isArray(lines) ? lines : [lines]).filter((line) => line !== null && line !== undefined && line !== "");
+    backdrop.innerHTML = `
+      <div class="lock-meta-dialog confirm-dialog" role="dialog" aria-modal="true">
+        <div class="lock-meta-head">
+          <strong>${escapeHtml(title || "请确认")}</strong>
+          <button class="lock-meta-close" type="button" title="关闭">×</button>
+        </div>
+        <div class="confirm-message">
+          ${messages.map((line, index) => `<div class="${danger && index === messages.length - 1 ? "warn" : ""}">${escapeHtml(line)}</div>`).join("")}
+        </div>
+        <div class="lock-meta-actions">
+          <button class="confirm-cancel" type="button">${escapeHtml(cancelText)}</button>
+          <button class="confirm-submit primary" type="button">${escapeHtml(confirmText)}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+    const finish = (value) => {
+      closeLockMetaDialog();
+      resolve(value);
+    };
+    backdrop.querySelector(".lock-meta-close").addEventListener("click", () => finish(false));
+    backdrop.querySelector(".confirm-cancel").addEventListener("click", () => finish(false));
+    backdrop.querySelector(".confirm-submit").addEventListener("click", () => finish(true));
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) finish(false);
+    });
+    backdrop.querySelector(".confirm-submit").focus();
+  });
+}
+
+function showLockDetail(meta, title, anchor) {
+  if (!meta || !anchor) return;
+  closeLockDetailPopover();
+  const popover = document.createElement("div");
+  popover.className = "lock-detail-popover";
+  popover.innerHTML = `
+    <button class="lock-detail-close" type="button" title="关闭">×</button>
+    <strong>${escapeHtml(title || "锁定明细")}</strong>
+    <dl>
+      <dt>一级原因</dt><dd>${escapeHtml(meta.primaryReason || "--")}</dd>
+      <dt>二级原因</dt><dd>${escapeHtml(meta.secondaryReason || meta.reason || "--")}</dd>
+      <dt>备注</dt><dd>${escapeHtml(meta.note || "--")}</dd>
+      <dt>修改人</dt><dd>${escapeHtml(meta.by || "--")}</dd>
+      <dt>时间</dt><dd>${escapeHtml(meta.at ? formatLocalDateTime(meta.at) : "--")}</dd>
+    </dl>
+  `;
+  document.body.appendChild(popover);
+  const rect = anchor.getBoundingClientRect();
+  const left = Math.min(Math.max(12, rect.left), window.innerWidth - 300);
+  const top = Math.min(rect.bottom + 8, window.innerHeight - popover.offsetHeight - 12);
+  popover.style.left = `${left}px`;
+  popover.style.top = `${Math.max(12, top)}px`;
+  popover.querySelector(".lock-detail-close").addEventListener("click", closeLockDetailPopover);
+  window.setTimeout(() => {
+    document.addEventListener("click", closeLockDetailPopover, { once: true });
+  }, 0);
+}
+
+function mapToPlainObject(map) {
+  return Object.fromEntries(map || []);
+}
+
+function objectToMap(object = {}) {
+  return new Map(Object.entries(object || {}));
+}
+
+function cloneLockMap(map = new Map()) {
+  return new Map([...map.entries()].map(([key, value]) => [key, { ...(value || {}) }]));
+}
+
 function cloneAdjustments(adjustments = state.adjustments) {
   return {
     skuFactor: new Map(adjustments.skuFactor),
@@ -425,9 +653,12 @@ function adjustmentSnapshot(label = "") {
     si: structuredClone(state.si),
     adjustments: cloneAdjustments(),
     promoCalendar: clonePromoCalendar(),
+    lockedTypes: cloneLockMap(state.lockedTypes),
+    lockedSkus: cloneLockMap(state.lockedSkus),
     pendingGlobalMonths: new Set(state.pendingGlobalMonths),
     pendingTargetCells: new Set(state.pendingTargetCells),
     selectedMonth: state.selectedMonth,
+    typeSummaryMonth: state.typeSummaryMonth,
     selectedSku: state.selectedSku,
   };
 }
@@ -436,9 +667,12 @@ function restoreSnapshot(snapshot) {
   state.si = structuredClone(snapshot.si);
   state.adjustments = cloneAdjustments(snapshot.adjustments);
   state.promoCalendar = clonePromoCalendar(snapshot.promoCalendar);
+  state.lockedTypes = cloneLockMap(snapshot.lockedTypes || new Map());
+  state.lockedSkus = cloneLockMap(snapshot.lockedSkus || new Map());
   state.pendingGlobalMonths = new Set(snapshot.pendingGlobalMonths || []);
   state.pendingTargetCells = new Set(snapshot.pendingTargetCells || []);
   state.selectedMonth = snapshot.selectedMonth || state.selectedMonth;
+  state.typeSummaryMonth = snapshot.typeSummaryMonth || state.typeSummaryMonth;
   state.selectedSku = snapshot.selectedSku || state.selectedSku;
   if (state.rawRows.length) buildForecast(state.rawRows);
   else renderAll();
@@ -518,6 +752,49 @@ function averageWeighted(items) {
   return totalWeight ? valid.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight : 0;
 }
 
+// ---- Module A: 近4月加权均值工具函数 ----
+function weightedMean(values, decay) {
+  if (typeof decay === "undefined") decay = 0.85;
+  var n = values.length;
+  if (n === 0) return 0;
+  var weights = [];
+  var i;
+  for (i = 0; i < n; i++) weights.push(Math.pow(decay, n - 1 - i));
+  var totalWeight = 0;
+  for (i = 0; i < n; i++) totalWeight += weights[i];
+  var weightedSum = 0;
+  for (i = 0; i < n; i++) weightedSum += values[i] * weights[i];
+  return totalWeight ? weightedSum / totalWeight : 0;
+}
+
+function stripAnomaliesFromWindow(values, windowStart, windowEnd) {
+  var window = values.slice(windowStart, windowEnd);
+  if (!window.length) return window;
+  var positive = window.filter(function(v) { return v > 0; });
+  if (!positive.length) return window;
+  var med = median(positive);
+  if (med <= 0) return window;
+  var mult = med >= 100 ? 3 : med >= 30 ? 2.5 : 2;
+  var result = [];
+  for (var idx = 0; idx < window.length; idx++) {
+    if (window[idx] > med * mult) {
+      var nbVals = [];
+      if (idx > 0) nbVals.push(result[idx - 1]);
+      if (windowStart + idx + 1 < values.length) nbVals.push(values[windowStart + idx + 1]);
+      result.push(Math.round(nbVals.length ? average(nbVals) : med));
+    } else {
+      result.push(window[idx]);
+    }
+  }
+  return result;
+}
+
+// ---- Module B: PTFE Fitting Kits 判断 ----
+function isPTFEFittingKits(typeName) {
+  var t = (typeName || "").toLowerCase();
+  return t.indexOf("ptfe") >= 0 && t.indexOf("fitting") >= 0 && t.indexOf("kit") >= 0;
+}
+
 function median(values) {
   const valid = values.filter((v) => Number.isFinite(v)).slice().sort((a, b) => a - b);
   if (!valid.length) return 0;
@@ -540,6 +817,10 @@ function clamp(value, min, max) {
 function round(value, digits = 0) {
   const base = 10 ** digits;
   return Math.round(value * base) / base;
+}
+
+function roundTo1(val) {
+  return Math.round(val * 10) / 10;
 }
 
 function normalizedLookupKey(value) {
@@ -868,27 +1149,30 @@ function recentBrakeStats(cleaned) {
   const recentWeighted = averageWeighted(weightedItems) || 0;
   const historyMonthlyAvg = cleaned.length ? sumValues(cleaned) / cleaned.length : 0;
   const rawRecentRatio = historyMonthlyAvg ? recentWeighted / historyMonthlyAvg : (recentWeighted > 0 ? 1 : 0);
-  const brakeRatio = clamp(rawRecentRatio, 0.35, 1);
   const recentTwoActive = cleaned.slice(-2).some((value) => value > 0);
   return {
     recentWeighted,
     historyMonthlyAvg,
     rawRecentRatio,
-    brakeRatio,
     recentTwoActive,
   };
 }
 
-function recentBrakeFactor(layer, stats) {
-  const influence = layer === "head" ? 0.35 : layer === "middle" ? 0.65 : 1;
-  return 1 + (stats.brakeRatio - 1) * influence;
+function recentBrakeFactor(segment, stats) {
+  // 砍叠加: 增长侧(ratio≥1)不再额外奖励，只在下滑时刹车压低
+  if (stats.rawRecentRatio >= 1) return 1;
+  var params = SEG_PARAMS[segment] || SEG_PARAMS.mid;
+  var brakeRatio = clamp(stats.rawRecentRatio, params.brakeLo, params.brakeHi);
+  return 1 + (brakeRatio - 1) * params.influence;
 }
 
-function recentGrowthRewardFactor(layer, stats) {
-  if (stats.rawRecentRatio < 1.3 || stats.recentWeighted <= 0) return 1;
-  if (layer === "head") return 1.05;
-  if (layer === "middle") return 1.08;
-  return 1;
+function recentGrowthRewardFactor(segment, stats) {
+  var params = SEG_PARAMS[segment] || SEG_PARAMS.mid;
+  if (stats.rawRecentRatio <= 1 || stats.recentWeighted <= 0 || params.rewardMax <= 0) return 1;
+  var excess = stats.rawRecentRatio - 1;
+  var capExcess = 0.5;
+  var fraction = Math.min(excess / capExcess, 1);
+  return 1 + fraction * params.rewardMax;
 }
 
 function buildForecastOptimizationContext(rows, historyMonths) {
@@ -900,6 +1184,8 @@ function buildForecastOptimizationContext(rows, historyMonths) {
 }
 
 function findSiProfile(type) {
+  // ---- 轻SI方案: 非PTFE保留原始SI值，在forecast loop用 1+(rawSi-1)*LIGHT_SI_FACTOR ----
+  // PTFE Fitting Kits 仍用原始SI + rule.season
   if (state.si[type]) {
     const source = state.missingSiTypes.includes(type) ? "全部默认" : "精确匹配";
     return { values: state.si[type], source, matchedType: type };
@@ -959,6 +1245,7 @@ function buildForecast(rows) {
   state.months = forecastMonths;
   state.rows = normalized.map((row) => forecastSku(row, forecastMonths, typeTrends.get(row.type), optimization));
   state.selectedMonth = forecastMonths.includes(state.selectedMonth) ? state.selectedMonth : forecastMonths[0];
+  state.typeSummaryMonth = forecastMonths.includes(state.typeSummaryMonth) ? state.typeSummaryMonth : state.selectedMonth;
   state.selectedSku = state.selectedSku || state.rows[0]?.sku || "";
   state.editingSku = "";
   resetSummaryCache();
@@ -967,37 +1254,117 @@ function buildForecast(rows) {
 
 function computeRawBaseForecast(row, forecastMonths, typeTrendInfo = null) {
   const { cleaned, anomalies } = cleanHistorySeries(row.history);
-  const positiveAvg = average(cleaned.filter((v) => v > 0));
+
+  // ---- Module A: 近4月加权基准 ----
+  var positiveAvg;
+  if (cleaned.length >= 4) {
+    var n = cleaned.length;
+    var winCleaned = stripAnomaliesFromWindow(cleaned, n - 4, n);
+    positiveAvg = weightedMean(winCleaned, 0.85) || average(winCleaned.filter(function(v) { return v > 0; }));
+  } else {
+    positiveAvg = average(cleaned.filter((v) => v > 0));
+  }
+
+  // ---- Module C: 段位判断 + 趋势乘数 ----
+  var segment = getSegment(positiveAvg);
+  var segParams = SEG_PARAMS[segment] || SEG_PARAMS.mid;
+
+  // ---- Module C-ext: 尾部间歇性折扣 ----
+  var intermittentDiscount = 1;
+  if (segment === "tail") {
+    var win4 = cleaned.length >= 4 ? stripAnomaliesFromWindow(cleaned, cleaned.length - 4, cleaned.length) : cleaned;
+    var activeInWin4 = win4.filter(function(v) { return v > 0; }).length;
+    if (activeInWin4 === 0) intermittentDiscount = 0;
+    else if (activeInWin4 === 1) intermittentDiscount = 0.8;
+    else if (activeInWin4 === 2) intermittentDiscount = 0.9;
+    else intermittentDiscount = 0.95;
+  }
+
   const { rule, cv, active } = stabilityRule(cleaned);
   const skuTrend = stableTrend(cleaned, 0.9, 1.12);
   const categoryTrend = typeTrendInfo?.trend || 1;
-  const blendedTrend = skuTrend * rule.recent + categoryTrend * rule.category;
+  var blendedTrend = skuTrend * rule.recent + categoryTrend * rule.category;
+
+  // ---- Module C: 段位趋势乘数 ----
+  blendedTrend = blendedTrend * segParams.trendMult;
+
   const trendAvg = positiveAvg * blendedTrend;
   const avgGrowth = averagePositiveGrowth(cleaned);
-  let previous = cleaned[cleaned.length - 1] || trendAvg;
+  let previous = positiveAvg;  // 从近4月均值开始，避免单月异常做起点导致过冲
   const forecast = {};
   const breakdown = {};
 
   forecastMonths.forEach((month) => {
+    // ---- 尾部: 直接均衡, 无趋势/SI ----
+    if (segment === "tail") {
+      var tailBase = positiveAvg * intermittentDiscount;
+      var formulaUnits = positiveAvg <= 0 ? 0 : Math.max(0.5, roundTo1(tailBase));
+      forecast[month] = { formulaUnits, formulaRevenue: Math.round(formulaUnits * row.price) };
+      breakdown[month] = {
+        cleanedAvg: round(positiveAvg, 2),
+        segment: SEG_NAMES[segment] || segment,
+        activeMonths: active,
+        intermittentDiscount: round(intermittentDiscount, 2),
+        tailFlat: formulaUnits,
+        rawSi: 1,
+        seasonal: 1,
+        initial: roundTo1(tailBase),
+        capped: formulaUnits,
+      };
+      return;
+    }
+
+    // ---- 非尾部: 轻SI + 趋势延伸 ----
     const siProfile = findSiProfile(row.type);
     const rawSi = siFor(row.type, month);
-    const seasonal = 1 + (rawSi - 1) * rule.season;
-    const initial = Math.max(0, Math.round(trendAvg * seasonal));
-    const isPeak = seasonal >= 1.12;
+
+    // 轻SI: PTFE用原始SI+rule.season, 其他用 1+(rawSi-1)*LIGHT_SI_FACTOR
+    var seasonal;
+    var isPeak;
+    if (isPTFEFittingKits(row.type)) {
+      seasonal = 1 + (rawSi - 1) * rule.season;
+      isPeak = seasonal >= 1.12;
+    } else {
+      seasonal = 1 + (rawSi - 1) * LIGHT_SI_FACTOR;
+      isPeak = seasonal >= IS_PEAK_THRESHOLD;
+    }
+
+    // 趋势衰减(钟形曲线): 前6月 pos_avg→trendAvg, 后6月 trendAvg→pos_avg
+    var monthIdx = forecastMonths.indexOf(month);
+    var totalMonths = 12;
+    var halfBlend = PROGRESSIVE_BLEND_MONTHS;
+    if (monthIdx < halfBlend) {
+      // 前6月: 从 pos_avg 渐进上升到 trendAvg
+      var blendFactor = (monthIdx + 1) / halfBlend;
+      var progressiveBase = positiveAvg * (1 - blendFactor) + trendAvg * blendFactor;
+    } else {
+      // 后6月: 从 trendAvg 渐进回落到 pos_avg
+      var decayFactor = (monthIdx - halfBlend + 1) / (totalMonths - halfBlend);
+      var progressiveBase = trendAvg * (1 - decayFactor) + positiveAvg * decayFactor;
+    }
+
+    var initial = Math.max(0, Math.round(progressiveBase * seasonal));
     let capped = initial;
     if (previous > 0) {
       if (initial > previous) {
         const rateCap = previous * (1 + (isPeak ? rule.peak : rule.up));
         const growthCap = previous + avgGrowth * (isPeak ? 1.2 : 0.9);
         capped = Math.min(initial, rateCap, growthCap || rateCap);
+        // ---- 封顶: 段位绝对增量上限, 逐月衰减(越往后增幅越小) ----
+        var segCapStart = { head: 20, midhi: 15, mid: 10, midlo: 5 };
+        var startCap = segCapStart[segment] || 3;
+        var decayRate = (totalMonths - 1 - monthIdx) / (totalMonths - 1); // month0=1.0, month11=0.0
+        var maxUnits = Math.max(1, Math.round(startCap * decayRate));
+        capped = Math.min(capped, previous + maxUnits);
       } else {
         capped = Math.max(initial, previous * (1 - rule.down));
       }
     }
-    const formulaUnits = Math.max(0, Math.round(capped));
+    var formulaUnits = Math.max(0, Math.round(capped));
     forecast[month] = { formulaUnits, formulaRevenue: Math.round(formulaUnits * row.price) };
     breakdown[month] = {
       cleanedAvg: round(positiveAvg, 2),
+      segment: SEG_NAMES[segment] || segment,
       activeMonths: active,
       cv: round(cv, 3),
       stability: rule.name,
@@ -1005,10 +1372,13 @@ function computeRawBaseForecast(row, forecastMonths, typeTrendInfo = null) {
       categoryTrend: round(categoryTrend, 3),
       blendedTrend: round(blendedTrend, 3),
       trendAvg: round(trendAvg, 2),
+      lightSi: isPTFEFittingKits(row.type) ? "原始SI" : round(LIGHT_SI_FACTOR, 2),
       rawSi: round(rawSi, 3),
       siSource: siProfile.source,
       siMatchedType: siProfile.matchedType,
       seasonal: round(seasonal, 3),
+      blendFactor: round(blendFactor, 2),
+      progressiveBase: round(progressiveBase, 2),
       initial,
       capped: formulaUnits,
     };
@@ -1025,63 +1395,90 @@ function computeRawBaseForecast(row, forecastMonths, typeTrendInfo = null) {
     breakdown,
     anomalies,
     typeTrendSeries: typeTrendInfo,
+    segment,
+    segParams,
+    positiveAvg,
   };
 }
 
 function optimizeFormulaUnits(row, month, rawUnits, rawMeta, optimizationContext) {
-  const layerProfile = optimizationContext?.layerMap?.get(row.sku) || {
+  // ---- Module C: 五段差异化 ----
+  var segment = rawMeta.segment || "mid";
+  var segParams = rawMeta.segParams || SEG_PARAMS.mid;
+  var segName = SEG_NAMES[segment] || segment;
+  var positiveAvg = rawMeta.positiveAvg || 0;
+
+  var layerProfile = optimizationContext?.layerMap?.get(row.sku) || {
     layer: "tail",
     layerName: "尾部",
     headTier: "",
     historyTotal: sumValues(rawMeta.cleaned),
     historyMonthlyAvg: rawMeta.cleaned.length ? sumValues(rawMeta.cleaned) / rawMeta.cleaned.length : 0,
   };
-  const layer = layerProfile.layer;
-  const calibration = calibrationRatio(row.type, layer, optimizationContext?.calibration || new Map());
-  const opportunityFactor = layer === "tail" ? 1 : 1.05;
-  const recentStats = recentBrakeStats(rawMeta.cleaned);
-  const brakeFactor = recentBrakeFactor(layer, recentStats);
-  const growthRewardFactor = recentGrowthRewardFactor(layer, recentStats);
-  let optimized = rawUnits * calibration * opportunityFactor * brakeFactor * growthRewardFactor;
-  const historyTotal = layerProfile.historyTotal;
-  const historyMonthlyAvg = layerProfile.historyMonthlyAvg;
-  const closeToRecent = recentStats.recentWeighted > 0
+  var layer = layerProfile.layer;
+  var calibration = calibrationRatio(row.type, layer, optimizationContext?.calibration || new Map());
+  var opportunityFactor = 1;  // 砍叠加: 不再有非尾部固定+5%
+  var recentStats = recentBrakeStats(rawMeta.cleaned);
+  var brakeFactor = recentBrakeFactor(segment, recentStats);
+  var growthRewardFactor = recentGrowthRewardFactor(segment, recentStats);
+  var optimized = rawUnits * calibration * opportunityFactor * brakeFactor * growthRewardFactor;
+  var historyTotal = layerProfile.historyTotal;
+  var historyMonthlyAvg = layerProfile.historyMonthlyAvg;
+  var closeToRecent = recentStats.recentWeighted > 0
     ? Math.abs(rawUnits - recentStats.recentWeighted) / recentStats.recentWeighted <= 0.1
     : false;
-  let guardrail = "";
+  var guardrail = "";
 
-  if (layer === "head") {
+  // ---- 五段护栏 (基于近4月均值封顶，避免optimize放大破坏computeRaw的封顶) ----
+  var posAvg = rawMeta.positiveAvg || 0;
+  if (segment === "head") {
     optimized = Math.max(optimized, rawUnits);
-    if (closeToRecent) {
-      const cap = rawUnits * (layerProfile.headTier === "super" ? 1.05 : 1.08);
-      optimized = Math.min(optimized, cap);
-      guardrail = layerProfile.headTier === "super" ? "超级头部防过冲" : "头部防过冲";
-    }
-  } else if (layer === "middle") {
+    // 封顶: 不超过近4月均值×1.12 (销量越高涨幅越小)
+    var posCap = posAvg > 0 ? posAvg * 1.12 : rawUnits * 1.12;
+    optimized = Math.min(optimized, posCap);
+    guardrail = "头部近4月封顶";
+  } else if (segment === "midhi") {
+    optimized = Math.max(optimized, rawUnits * 0.98);
+    var posCap = posAvg > 0 ? posAvg * 1.15 : rawUnits * 1.10;
+    optimized = Math.min(optimized, posCap);
+    guardrail = "中上近4月封顶";
+  } else if (segment === "mid") {
     optimized = Math.max(optimized, rawUnits * 0.95);
-    if (closeToRecent) {
-      optimized = Math.min(optimized, rawUnits * 1.12);
-      guardrail = "中部防过冲";
-    }
-  } else {
+    var posCap = posAvg > 0 ? posAvg * 1.08 : rawUnits * 1.05;
+    optimized = Math.min(optimized, posCap);
+    guardrail = "中部近4月封顶";
+  } else if (segment === "midlo") {
     if (!recentStats.recentTwoActive && historyTotal <= 0) {
       optimized = 0;
+      guardrail = "中下无动销归零";
+    } else if (!recentStats.recentTwoActive && historyMonthlyAvg < 3) {
+      optimized = Math.min(optimized, Math.max(historyMonthlyAvg * 0.9, 2));
+      guardrail = "中下近2月无动销收缩";
+    } else if (historyMonthlyAvg < 5) {
+      optimized = Math.min(optimized, Math.max(recentStats.recentWeighted * 1.1, 2));
+      guardrail = "中下低基数收缩";
+    }
+  } else if (segment === "tail") {
+    // 尾部已在computeRawBaseForecast做均衡+间歇折扣, 此处跳过brake/reward
+    brakeFactor = 1;
+    growthRewardFactor = 1;
+    var posAvg = rawMeta.positiveAvg || 0;
+    if (posAvg <= 0) {
+      optimized = 0;
       guardrail = "尾部无动销归零";
-    } else if (!recentStats.recentTwoActive && historyTotal < 15) {
-      optimized = Math.min(optimized, Math.max(historyMonthlyAvg * 0.8, 2));
-      guardrail = "尾部近2月无动销收缩";
-    } else if (historyTotal < 15) {
-      optimized = Math.min(optimized, Math.max(historyMonthlyAvg * 1.2, 4));
-      guardrail = "尾部低基数收缩";
-    } else if (historyTotal < 40) {
-      optimized = Math.min(optimized, Math.max(recentStats.recentWeighted * 1.2, 8));
-      guardrail = "尾部小体量收缩";
+    } else {
+      optimized = rawUnits;
+      guardrail = "尾部均衡";
     }
   }
 
   return {
-    units: Math.max(0, Math.round(optimized)),
+    units: segment === "tail" ? Math.max(0, roundTo1(optimized)) : Math.max(0, Math.round(optimized)),
     layerProfile,
+    segment,
+    segName,
+    segParams,
+    positiveAvg,
     calibration,
     opportunityFactor,
     brakeFactor,
@@ -1106,6 +1503,8 @@ function forecastSku(row, forecastMonths, typeTrendInfo = null, optimizationCont
     breakdown[month] = {
       ...(raw.breakdown[month] || {}),
       rawBaseForecast: rawUnits,
+      segment: optimized.segName || SEG_NAMES[optimized.segment] || optimized.segment,
+      positiveAvg: round(optimized.positiveAvg || raw.positiveAvg || 0, 2),
       salesLayer: optimized.layerProfile.layerName,
       headTier: optimized.layerProfile.headTier === "super" ? "超级头部" : optimized.layerProfile.headTier === "normal" ? "普通头部" : "",
       calibrationRatio: round(optimized.calibration, 3),
@@ -1130,6 +1529,9 @@ function forecastSku(row, forecastMonths, typeTrendInfo = null, optimizationCont
     anomalies: raw.anomalies,
     typeTrendSeries: raw.typeTrendSeries,
     salesLayer: optimizationContext?.layerMap?.get(row.sku)?.layerName || "尾部",
+    segment: raw.segment,
+    segName: SEG_NAMES[raw.segment] || raw.segment,
+    positiveAvg: raw.positiveAvg,
   };
 }
 
@@ -1165,6 +1567,14 @@ function parseTypeTargetKey(key) {
   const parts = String(key).split("|");
   const month = parts.pop() || "";
   return { type: parts.join("|"), month };
+}
+
+function currentTypeGrowth(type, month) {
+  const key = typeTargetKey(type, month);
+  if (state.adjustments.typeTargetOverride.has(key)) return state.adjustments.typeTargetOverride.get(key);
+  if (state.adjustments.typeTarget.has(key)) return (state.adjustments.typeTarget.get(key) || 1) - 1;
+  const info = typeTargetSuggestionRows(month).find((row) => row.type === type);
+  return info?.suggestedGrowth || 0;
 }
 
 function inputGrowthValue(input) {
@@ -1252,11 +1662,70 @@ function renderAfterTargetApply() {
   invalidateSummaryCache();
   renderUndoButtons();
   renderMetrics();
+  renderLockSummaryCard();
   renderMonthlyTrendBar();
   renderTypeTable();
   renderSharedAnalysis();
   renderDetail();
   drawSkuChart();
+}
+
+function renderTypeLockBulkButtons() {
+  const selected = state.selectedLockTypes.size;
+  if (els.lockSelectedTypes) {
+    els.lockSelectedTypes.disabled = !selected;
+    els.lockSelectedTypes.textContent = selected ? `固定已选Type(${selected})` : "固定已选Type";
+  }
+  if (els.unlockSelectedTypes) {
+    els.unlockSelectedTypes.disabled = !selected;
+    els.unlockSelectedTypes.textContent = selected ? `取消固定(${selected})` : "取消固定";
+  }
+}
+
+async function lockTypes(types) {
+  const uniqueTypes = [...new Set((types || []).filter(Boolean))];
+  if (!uniqueTypes.length) return;
+  const meta = await requestLockMeta(`固定 ${uniqueTypes.length} 个 Type`);
+  if (!meta) return;
+  pushHistory("固定Type目标");
+  uniqueTypes.forEach((type) => {
+    state.lockedTypes.set(type, { ...meta });
+    state.months.forEach((month) => {
+      const key = typeTargetKey(type, month);
+      const growth = clamp(currentTypeGrowth(type, month), -0.05, 0.25);
+      state.adjustments.typeTargetOverride.set(key, growth);
+      if (state.adjustments.typeTarget.has(key)) state.adjustments.typeTarget.set(key, clamp(1 + growth, 0.3, 2));
+      state.pendingTargetCells.delete(key);
+    });
+  });
+  state.selectedLockTypes.clear();
+  renderTypeTargetPanel();
+  renderLockSummaryCard();
+  saveLocalDraftNow();
+  showToast(`已固定 ${numberFmt.format(uniqueTypes.length)} 个 Type。`, "success");
+}
+
+async function unlockTypes(types) {
+  const uniqueTypes = [...new Set((types || []).filter((type) => state.lockedTypes.has(type)))];
+  if (!uniqueTypes.length) return;
+  const confirmed = await requestConfirmDialog({
+    title: "取消固定 Type",
+    lines: [
+      `将取消固定 ${numberFmt.format(uniqueTypes.length)} 个 Type。`,
+      "取消后，后续滚动更新不会继续保护这些 Type 目标。",
+      "可通过 Ctrl+Z 撤销本次操作。",
+    ],
+    confirmText: "确认取消固定",
+    danger: true,
+  });
+  if (!confirmed) return;
+  pushHistory("取消固定Type目标");
+  uniqueTypes.forEach((type) => state.lockedTypes.delete(type));
+  state.selectedLockTypes.clear();
+  renderTypeTargetPanel();
+  renderLockSummaryCard();
+  saveLocalDraftNow();
+  showToast(`已取消固定 ${numberFmt.format(uniqueTypes.length)} 个 Type。`, "success");
 }
 
 function typeTargetSuggestionRows(month = state.selectedMonth, growth = monthlyTargetRate(month)) {
@@ -1464,6 +1933,17 @@ function cachedTypeTotals(month) {
   return [...state.summaryCache.typeMonthly.values()].filter((item) => item.month === month);
 }
 
+function actualTypeRevenueMap(historyMonth = state.historyMonths.at(-1) || "") {
+  const index = state.historyMonths.indexOf(historyMonth);
+  const map = new Map();
+  if (index < 0) return map;
+  state.rows.forEach((row) => {
+    const revenue = Math.round((row.history[index] || 0) * row.price);
+    map.set(row.type, (map.get(row.type) || 0) + revenue);
+  });
+  return map;
+}
+
 function totalsUncached(month, filter = null) {
   return state.rows.reduce((acc, row) => {
     if (filter && !filter(row)) return acc;
@@ -1521,7 +2001,9 @@ function renderAll() {
   syncFilterInputs();
   renderUndoButtons();
   renderMetrics();
+  renderLockSummaryCard();
   renderMonthlyTrendBar();
+  renderRolloverLog();
   renderTypeTargetPanel();
   renderSiEditor();
   renderTypeTable();
@@ -1556,6 +2038,7 @@ function renderAfterSkuDirectEdit() {
   invalidateSummaryCache();
   renderUndoButtons();
   renderMetrics();
+  renderLockSummaryCard();
   renderMonthlyTrendBar();
   renderTypeTable();
   renderSharedAnalysis();
@@ -1568,6 +2051,11 @@ function renderControls() {
   els.monthSelect.innerHTML = state.months.map((m) => `<option value="${m}">${m}</option>`).join("");
   els.monthSelect.value = state.selectedMonth || state.months[0] || "";
   state.selectedMonth = els.monthSelect.value;
+  if (!state.months.includes(state.typeSummaryMonth)) state.typeSummaryMonth = state.selectedMonth || state.months[0] || "";
+  if (els.typeSummaryMonthSelect) {
+    els.typeSummaryMonthSelect.innerHTML = state.months.map((m) => `<option value="${m}">${m}</option>`).join("");
+    els.typeSummaryMonthSelect.value = state.typeSummaryMonth || "";
+  }
 
   if (els.adjustScope) {
     const previousScope = els.adjustScope.value || "all";
@@ -1577,6 +2065,8 @@ function renderControls() {
     ].join("");
     els.adjustScope.value = previousScope === "all" || state.months.includes(previousScope) ? previousScope : "all";
   }
+  if (els.skuLockFilter) els.skuLockFilter.value = state.filters.skuLockStatus || "all";
+  if (els.targetLockFilter) els.targetLockFilter.value = state.filters.typeLockStatus || "all";
 
   const options = state.scope === "overall"
     ? [["overall", "整体"]]
@@ -1662,7 +2152,90 @@ function renderMetrics() {
   els.statusText.textContent = state.rows.length
     ? `${state.sourceName}：历史 ${state.historyMonths[0]} 至 ${state.historyMonths.at(-1)}，预测 ${state.months[0]} 至 ${state.months.at(-1)}。`
     : "请先导入基础模板。";
-  els.currentMonthLabel.textContent = month || "--";
+}
+
+function lockSummaryStats() {
+  const entries = [
+    ...[...state.lockedTypes.entries()].map(([key, meta]) => ({ kind: "type", key, meta })),
+    ...[...state.lockedSkus.entries()].map(([key, meta]) => ({ kind: "sku", key, meta })),
+  ];
+  const skuTypeMap = new Map(state.rows.map((row) => [row.sku, row.type]));
+  const involvedTypes = new Set([...state.lockedTypes.keys()]);
+  const involvedSkus = new Set();
+  state.rows.forEach((row) => {
+    if (state.lockedTypes.has(row.type)) involvedSkus.add(row.sku);
+  });
+  state.lockedSkus.forEach((meta, sku) => {
+    const type = skuTypeMap.get(sku);
+    if (type) involvedTypes.add(type);
+    involvedSkus.add(sku);
+  });
+  const reasonCounts = new Map();
+  let latestAt = "";
+  entries.forEach(({ meta }) => {
+    const reason = normalize(meta?.primaryReason || meta?.reason || "未填写");
+    reasonCounts.set(reason, (reasonCounts.get(reason) || 0) + 1);
+    if (meta?.at && (!latestAt || String(meta.at) > latestAt)) latestAt = String(meta.at);
+  });
+  return {
+    typeCount: state.lockedTypes.size,
+    skuCount: state.lockedSkus.size,
+    involvedTypeCount: involvedTypes.size,
+    involvedSkuCount: involvedSkus.size,
+    totalCount: entries.length,
+    latestAt,
+    reasonCounts: [...reasonCounts.entries()].sort((a, b) => b[1] - a[1]),
+  };
+}
+
+function renderLockSummaryCard() {
+  if (!els.metricLockSummary || !els.metricLockLatest) return;
+  const stats = lockSummaryStats();
+  els.metricLockSummary.textContent = `${numberFmt.format(stats.typeCount)} / ${numberFmt.format(stats.skuCount)}`;
+  els.metricLockLatest.textContent = stats.latestAt
+    ? `固定Type / 锁定SKU，最近 ${formatLocalDateTime(stats.latestAt)}`
+    : "固定Type / 锁定SKU";
+  if (els.lockSummaryCard) {
+    els.lockSummaryCard.classList.toggle("has-locks", stats.totalCount > 0);
+    els.lockSummaryCard.title = `点击查看锁定汇总：固定 Type ${numberFmt.format(stats.typeCount)}，锁定 SKU ${numberFmt.format(stats.skuCount)}`;
+  }
+}
+
+function showLockSummaryDialog() {
+  closeLockMetaDialog();
+  closeLockDetailPopover();
+  renderLockSummaryCard();
+  const stats = lockSummaryStats();
+  const reasonHtml = stats.reasonCounts.length
+    ? stats.reasonCounts.map(([reason, count]) => `<span class="reason-pill">${escapeHtml(reason)} ${numberFmt.format(count)}</span>`).join("")
+    : `<span class="lock-muted">暂无锁定/固定原因</span>`;
+  const backdrop = document.createElement("div");
+  backdrop.className = "lock-meta-backdrop";
+  backdrop.innerHTML = `
+    <div class="lock-meta-dialog lock-summary-dialog" role="dialog" aria-modal="true">
+      <div class="lock-meta-head">
+        <strong>锁定汇总</strong>
+        <button class="lock-meta-close" type="button" title="关闭">×</button>
+      </div>
+      <div class="lock-summary-grid">
+        <div><span>已固定 Type</span><strong>${numberFmt.format(stats.typeCount)}</strong></div>
+        <div><span>已锁定 SKU</span><strong>${numberFmt.format(stats.skuCount)}</strong></div>
+        <div><span>涉及 Type</span><strong>${numberFmt.format(stats.involvedTypeCount)}</strong></div>
+        <div><span>涉及 SKU</span><strong>${numberFmt.format(stats.involvedSkuCount)}</strong></div>
+        <div><span>最近时间</span><strong>${stats.latestAt ? escapeHtml(formatLocalDateTime(stats.latestAt)) : "--"}</strong></div>
+      </div>
+      <div class="lock-summary-reasons">
+        <span>一级原因分布</span>
+        <div>${reasonHtml}</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = () => closeLockMetaDialog();
+  backdrop.querySelector(".lock-meta-close").addEventListener("click", close);
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) close();
+  });
 }
 
 function renderMonthlyTrendBar() {
@@ -1751,10 +2324,14 @@ function renderMonthlyTrendBar() {
 }
 
 function renderTypeTable() {
-  const month = state.selectedMonth;
+  const month = state.typeSummaryMonth || state.selectedMonth;
   const total = totals(month);
   const prev = previousForecastMonth(month);
-  const prevByType = prev ? new Map(cachedTypeTotals(prev).map((row) => [row.type, row.revenue])) : new Map();
+  const prevByType = prev
+    ? new Map(cachedTypeTotals(prev).map((row) => [row.type, row.revenue]))
+    : actualTypeRevenueMap(state.historyMonths.at(-1) || "");
+  const compareLabel = prev || state.historyMonths.at(-1) || "";
+  if (els.currentMonthLabel) els.currentMonthLabel.textContent = compareLabel ? `${month || "--"}（对比 ${compareLabel}）` : (month || "--");
   els.typeRows.innerHTML = cachedTypeTotals(month).sort((a, b) => b.revenue - a.revenue).map((row) => {
     const share = total.revenue ? row.revenue / total.revenue : 0;
     const mom = ratio(row.revenue, prevByType.get(row.type) || 0);
@@ -1791,7 +2368,14 @@ function renderTypeTargetPanel() {
     month,
     new Map(typeTargetSuggestionRows(month).map((row) => [row.type, row])),
   ]));
-  const typeRows = typeTargetSuggestionRows(state.selectedMonth || months[0]);
+  const typeLockStatus = els.targetLockFilter?.value || state.filters.typeLockStatus || "all";
+  state.filters.typeLockStatus = typeLockStatus;
+  const typeRows = typeTargetSuggestionRows(state.selectedMonth || months[0]).filter((row) => {
+    const locked = state.lockedTypes.has(row.type);
+    if (typeLockStatus === "locked") return locked;
+    if (typeLockStatus === "unlocked") return !locked;
+    return true;
+  });
 
   const globalRateRow = `<tr class="target-control-row">
     <td class="target-label"><strong>全局目标涨幅 %</strong><small>空白默认 0%，点击“全局应用”后分配到 Type 建议</small></td>
@@ -1803,10 +2387,16 @@ function renderTypeTargetPanel() {
     }).join("")}
   </tr>`;
 
-  const rowsHtml = typeRows.map((current) => `<tr>
+  const rowsHtml = typeRows.map((current) => {
+    const meta = state.lockedTypes.get(current.type);
+    const locked = Boolean(meta);
+    const checked = state.selectedLockTypes.has(current.type) ? " checked" : "";
+    const disabled = locked ? " disabled" : "";
+    return `<tr class="${locked ? "locked-row" : ""}">
     <td class="target-label">
-      <strong>${escapeHtml(current.type)}</strong>
+      <label class="row-check"><input class="type-lock-check" data-type="${escapeHtml(current.type)}" type="checkbox"${checked} /> <strong>${escapeHtml(current.type)}</strong></label>
       <small>当前月 ${moneyFmt.format(current.revenue)}｜稳 ${round(current.sFactor, 2)}｜势 ${round(current.tFactor, 2)}</small>
+      <small>${locked ? lockTag("已固定", "type", meta, `data-type="${escapeHtml(current.type)}"`) : '<span class="lock-muted">未固定</span>'} <button class="link-button type-lock-action" data-type="${escapeHtml(current.type)}" data-action="${locked ? "unlock-type" : "lock-type"}" type="button">${locked ? "取消固定" : "固定"}</button></small>
     </td>
     ${months.map((month) => {
       const row = monthMaps.get(month)?.get(current.type);
@@ -1817,12 +2407,13 @@ function renderTypeTargetPanel() {
       const inputValue = round((isOverride ? row.override : row.suggestedGrowth) * 100, 1);
       return `<td class="${isOverride ? "manual-override-cell" : ""}">
         <div class="target-input-wrap">
-          <input class="type-target-input ${isOverride ? "overridden-input" : "suggested-input"}${isPending ? " pending-input" : ""}" data-type="${escapeHtml(current.type)}" data-month="${month}" data-suggested="${round(row.suggestedGrowth * 100, 1)}" type="number" step="0.1" value="${inputValue}" title="清空后恢复系统建议值" />
+          <input class="type-target-input ${isOverride ? "overridden-input" : "suggested-input"}${isPending ? " pending-input" : ""}" data-type="${escapeHtml(current.type)}" data-month="${month}" data-suggested="${round(row.suggestedGrowth * 100, 1)}" type="number" step="0.1" value="${inputValue}" title="清空后恢复系统建议值"${disabled} />
           ${isOverride ? '<span class="override-dot" title="人工覆盖"></span>' : ""}
         </div>
       </td>`;
     }).join("")}
-  </tr>`).join("");
+  </tr>`;
+  }).join("");
 
   els.typeTargetRows.innerHTML = globalRateRow + rowsHtml;
 
@@ -1855,6 +2446,30 @@ function renderTypeTargetPanel() {
       scheduleLocalDraftSave();
     });
   });
+
+  els.typeTargetRows.querySelectorAll(".type-lock-check").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) state.selectedLockTypes.add(input.dataset.type);
+      else state.selectedLockTypes.delete(input.dataset.type);
+      renderTypeLockBulkButtons();
+    });
+  });
+
+  els.typeTargetRows.querySelectorAll(".type-lock-action").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.action === "lock-type") lockTypes([button.dataset.type]);
+      else unlockTypes([button.dataset.type]);
+    });
+  });
+  els.typeTargetRows.querySelectorAll(".lock-tag.type").forEach((tag) => {
+    tag.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const meta = state.lockedTypes.get(tag.dataset.type);
+      showLockDetail(meta, `Type：${tag.dataset.type}`, tag);
+    });
+  });
+
+  renderTypeLockBulkButtons();
 }
 
 function closeMonthNotePopover() {
@@ -1921,10 +2536,14 @@ function renderSiEditor() {
 function rowsForSkuTable() {
   const query = normalize(els.searchBox.value).toLowerCase();
   const stability = els.stabilityFilter.value;
+  const lockStatus = els.skuLockFilter?.value || state.filters.skuLockStatus || "all";
+  state.filters.skuLockStatus = lockStatus;
   const criteria = bulkFilterCriteria();
   return rowsMatchingBulkFilters(state.rows, criteria).filter((row) => {
     if (query && !`${row.sku} ${row.type} ${row.owner || ""}`.toLowerCase().includes(query)) return false;
     if (stability && row.stability !== stability) return false;
+    if (lockStatus === "locked" && !state.lockedSkus.has(row.sku)) return false;
+    if (lockStatus === "unlocked" && state.lockedSkus.has(row.sku)) return false;
     return true;
   });
 }
@@ -2001,6 +2620,7 @@ function renderSkuTable() {
     "<th>负责人</th>",
     "<th>价格</th>",
     "<th>稳定层级</th>",
+    "<th>锁定</th>",
     `<th>${state.historyMonths.at(-1) || "最新月"}<br>销量</th>`,
     ...state.months.map((m) => `<th>${m}<br>最终预测</th>`),
     `<th>${month}<br>历史预测</th>`,
@@ -2031,6 +2651,9 @@ function renderSkuTable() {
   els.skuRows.innerHTML = visibleRows.map((row) => {
     const key = adjustmentKey(row.sku, month);
     const isEditing = state.editingSku === row.sku;
+    const lockMeta = state.lockedSkus.get(row.sku);
+    const isLocked = Boolean(lockMeta);
+    const lockChecked = state.selectedLockSkus.has(row.sku) ? " checked" : "";
     const factor = state.adjustments.skuFactor.get(key);
     const add = state.adjustments.eventAdd.get(key);
     const manual = state.adjustments.directUnits.get(key);
@@ -2051,13 +2674,14 @@ function renderSkuTable() {
       : `<td class="note-cell">${escapeHtml(note || "")}</td>`;
     const actionCell = isEditing
       ? `<button class="small primary row-save" data-action="save-row" data-sku="${escapeHtml(row.sku)}" type="button">保存</button><button class="small row-cancel" data-action="cancel-row" data-sku="${escapeHtml(row.sku)}" type="button">取消</button>`
-      : `<button class="small" data-action="edit-row" data-sku="${escapeHtml(row.sku)}" type="button">编辑</button>`;
-    return `<tr class="clickable" data-sku="${escapeHtml(row.sku)}">
-      <td class="sku-sticky-col sku-sticky-sku">${escapeHtml(row.sku)}</td>
+      : `<button class="small" data-action="edit-row" data-sku="${escapeHtml(row.sku)}" type="button">编辑</button><button class="small" data-action="${isLocked ? "unlock-sku" : "lock-sku"}" data-sku="${escapeHtml(row.sku)}" type="button">${isLocked ? "解锁" : "锁定"}</button>`;
+    return `<tr class="clickable ${isLocked ? "locked-row" : ""}" data-sku="${escapeHtml(row.sku)}">
+      <td class="sku-sticky-col sku-sticky-sku"><label class="row-check"><input class="sku-lock-check" data-sku="${escapeHtml(row.sku)}" type="checkbox"${lockChecked} /> <span>${escapeHtml(row.sku)}</span></label></td>
       <td class="sku-sticky-col sku-sticky-type">${escapeHtml(row.type)}</td>
       <td>${escapeHtml(row.owner || "")}</td>
       <td>${moneyFmt.format(row.price)}</td>
       <td><span class="tag">${escapeHtml(row.stability)}</span></td>
+      <td>${isLocked ? lockTag("已锁定", "sku", lockMeta, `data-sku="${escapeHtml(row.sku)}"`) : '<span class="lock-muted">未锁定</span>'}</td>
       <td>${numberFmt.format(latestHistoryUnits(row))}</td>
       ${monthCells}
       <td>${getHistoricUnits(row, month) === null ? "--" : numberFmt.format(getHistoricUnits(row, month))}</td>
@@ -2080,10 +2704,95 @@ function renderSkuTable() {
   els.skuRows.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => handleRowEditAction(button.dataset.action, button.dataset.sku));
   });
+  els.skuRows.querySelectorAll(".lock-tag.sku").forEach((tag) => {
+    tag.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const meta = state.lockedSkus.get(tag.dataset.sku);
+      showLockDetail(meta, `SKU：${tag.dataset.sku}`, tag);
+    });
+  });
+  els.skuRows.querySelectorAll(".sku-lock-check").forEach((input) => {
+    input.addEventListener("click", (event) => event.stopPropagation());
+    input.addEventListener("change", () => {
+      if (input.checked) state.selectedLockSkus.add(input.dataset.sku);
+      else state.selectedLockSkus.delete(input.dataset.sku);
+      renderSkuLockBulkButtons();
+    });
+  });
+  renderSkuLockBulkButtons();
+}
+
+function renderSkuLockBulkButtons() {
+  const selected = state.selectedLockSkus.size;
+  if (els.lockSelectedSkus) {
+    els.lockSelectedSkus.disabled = !selected;
+    els.lockSelectedSkus.textContent = selected ? `锁定已选SKU(${selected})` : "锁定已选SKU";
+  }
+  if (els.unlockSelectedSkus) {
+    els.unlockSelectedSkus.disabled = !selected;
+    els.unlockSelectedSkus.textContent = selected ? `解锁已选SKU(${selected})` : "解锁已选SKU";
+  }
+}
+
+async function lockSkus(skus) {
+  const uniqueSkus = [...new Set((skus || []).filter(Boolean))];
+  if (!uniqueSkus.length) return;
+  const meta = await requestLockMeta(`锁定 ${uniqueSkus.length} 个 SKU`);
+  if (!meta) return;
+  const rowBySku = new Map(state.rows.map((row) => [row.sku, row]));
+  pushHistory("锁定SKU预测");
+  let count = 0;
+  uniqueSkus.forEach((sku) => {
+    const row = rowBySku.get(sku);
+    if (!row) return;
+    state.lockedSkus.set(sku, { ...meta });
+    state.months.forEach((month) => {
+      const key = adjustmentKey(sku, month);
+      state.adjustments.directUnits.set(key, getFinalUnits(row, month));
+      if (meta.note) state.adjustments.notes.set(key, meta.note);
+    });
+    count += 1;
+  });
+  state.selectedLockSkus.clear();
+  renderAfterSkuDirectEdit();
+  renderLockSummaryCard();
+  saveLocalDraftNow();
+  showToast(`已锁定 ${numberFmt.format(count)} 个 SKU。`, "success");
+}
+
+async function unlockSkus(skus) {
+  const uniqueSkus = [...new Set((skus || []).filter((sku) => state.lockedSkus.has(sku)))];
+  if (!uniqueSkus.length) return;
+  const confirmed = await requestConfirmDialog({
+    title: "解锁 SKU",
+    lines: [
+      `将解锁 ${numberFmt.format(uniqueSkus.length)} 个 SKU。`,
+      "解锁后，后续滚动更新不会继续保护这些 SKU 的人工预测。",
+      "可通过 Ctrl+Z 撤销本次操作。",
+    ],
+    confirmText: "确认解锁",
+    danger: true,
+  });
+  if (!confirmed) return;
+  pushHistory("解锁SKU预测");
+  uniqueSkus.forEach((sku) => state.lockedSkus.delete(sku));
+  state.selectedLockSkus.clear();
+  renderAfterSkuDirectEdit();
+  renderLockSummaryCard();
+  saveLocalDraftNow();
+  showToast(`已解锁 ${numberFmt.format(uniqueSkus.length)} 个 SKU。`, "success");
 }
 
 function handleRowEditAction(action, sku) {
   if (!sku) return;
+  if (action === "lock-sku") {
+    lockSkus([sku]);
+    return;
+  }
+  if (action === "unlock-sku") {
+    unlockSkus([sku]);
+    return;
+  }
   if (action === "edit-row") {
     state.editingSku = sku;
     state.selectedSku = sku;
@@ -2551,7 +3260,14 @@ function loadBaseRows(rows, fileName = "导入数据") {
   state.filters.bulkSkuText = "";
   state.filters.bulkTypeText = "";
   state.filters.ownerText = "";
+  state.filters.skuLockStatus = "all";
+  state.filters.typeLockStatus = "all";
   state.editingSku = "";
+  state.lockedTypes.clear();
+  state.lockedSkus.clear();
+  state.selectedLockTypes.clear();
+  state.selectedLockSkus.clear();
+  state.rolloverLog = null;
   state.promoCalendar.monthlyRates.clear();
   state.promoCalendar.notes.clear();
   state.pendingGlobalMonths.clear();
@@ -2563,6 +3279,185 @@ function loadBaseRows(rows, fileName = "导入数据") {
   state.adjustments.typeTargetOverride.clear();
   state.adjustments.notes.clear();
   buildForecast(rows);
+}
+
+function captureLockedSkuValues() {
+  const rowBySku = new Map(state.rows.map((row) => [row.sku, row]));
+  const values = new Map();
+  state.lockedSkus.forEach((meta, sku) => {
+    const row = rowBySku.get(sku);
+    if (!row) return;
+    state.months.forEach((month) => {
+      const key = adjustmentKey(sku, month);
+      values.set(key, {
+        value: getFinalUnits(row, month),
+        note: state.adjustments.notes.get(key) || meta.note || "",
+      });
+    });
+  });
+  return values;
+}
+
+function captureLockedTypeValues() {
+  const values = new Map();
+  state.lockedTypes.forEach((meta, type) => {
+    state.months.forEach((month) => {
+      values.set(typeTargetKey(type, month), {
+        growth: clamp(currentTypeGrowth(type, month), -0.05, 0.25),
+        note: meta.note || "",
+      });
+    });
+  });
+  return values;
+}
+
+function countUnlockedManualCells() {
+  let skuCells = 0;
+  state.adjustments.directUnits.forEach((_, key) => {
+    const [sku] = key.split("|");
+    if (!state.lockedSkus.has(sku)) skuCells += 1;
+  });
+  let typeCells = 0;
+  state.adjustments.typeTargetOverride.forEach((_, key) => {
+    const { type } = parseTypeTargetKey(key);
+    if (!state.lockedTypes.has(type)) typeCells += 1;
+  });
+  return { skuCells, typeCells, total: skuCells + typeCells };
+}
+
+function clearForecastAdjustmentsForRollover() {
+  state.undoStack = [];
+  state.redoStack = [];
+  state.skuPage = 1;
+  state.editingSku = "";
+  state.promoCalendar.monthlyRates.clear();
+  state.promoCalendar.notes.clear();
+  state.pendingGlobalMonths.clear();
+  state.pendingTargetCells.clear();
+  state.adjustments.skuFactor.clear();
+  state.adjustments.eventAdd.clear();
+  state.adjustments.directUnits.clear();
+  state.adjustments.typeTarget.clear();
+  state.adjustments.typeTargetOverride.clear();
+  state.adjustments.notes.clear();
+  state.selectedLockTypes.clear();
+  state.selectedLockSkus.clear();
+}
+
+function renderRolloverLog() {
+  if (!els.rolloverLog) return;
+  const log = state.rolloverLog;
+  if (!log || log.dismissed) {
+    els.rolloverLog.classList.add("hidden");
+    els.rolloverLog.innerHTML = "";
+    return;
+  }
+  els.rolloverLog.className = "target-apply-status success rollover-log";
+  els.rolloverLog.innerHTML = `
+    <button class="dismiss-log" type="button" title="关闭">×</button>
+    <strong>滚动更新完成：</strong>
+    新历史月 ${escapeHtml(log.latestHistoryMonth || "--")}；
+    重算 ${numberFmt.format(log.recomputedSkuCount || 0)} 个 SKU；
+    继承锁定 SKU ${numberFmt.format(log.keptLockedSkuCount || 0)} 个；
+    继承固定 Type ${numberFmt.format(log.keptFixedTypeCount || 0)} 个；
+    覆盖未锁人工项 ${numberFmt.format(log.overwrittenManualCount || 0)} 个；
+    新预测月 ${escapeHtml(log.newForecastMonth || "--")} 已使用系统预测。
+    <span class="warn">请确认后手动保存云端。</span>
+  `;
+  els.rolloverLog.querySelector(".dismiss-log")?.addEventListener("click", () => {
+    state.rolloverLog.dismissed = true;
+    renderRolloverLog();
+  });
+}
+
+async function runRolloverUpdate() {
+  const rows = state.pendingRolloverRows;
+  if (!rows?.length) {
+    showToast("请先选择新的历史销量文件。", "error");
+    return;
+  }
+  if (!state.rawRows.length) {
+    showToast("请先导入云端/项目中的旧预测版本，再做滚动更新。", "error");
+    return;
+  }
+  const overwritten = countUnlockedManualCells();
+  const confirmed = await requestConfirmDialog({
+    title: "导入新销量并滚动更新",
+    lines: [
+      "滚动更新将使用新销量重算预测。",
+      `会继承：${numberFmt.format(state.lockedSkus.size)} 个锁定 SKU、${numberFmt.format(state.lockedTypes.size)} 个固定 Type。`,
+      `会覆盖未锁定人工项：${numberFmt.format(overwritten.total)} 个。`,
+      "新增月份会使用系统预测，锁定对象仍需复核新月份。",
+      "确认后仅保存本地草稿，云端仍需手动保存。",
+    ],
+    confirmText: "确认滚动更新",
+    danger: true,
+  });
+  if (!confirmed) return;
+
+  setLoading(true, "正在滚动更新预测，请稍候...");
+  return new Promise((resolve) => {
+    window.setTimeout(() => {
+    try {
+      const oldMonths = [...state.months];
+      const oldLockedTypes = cloneLockMap(state.lockedTypes);
+      const oldLockedSkus = cloneLockMap(state.lockedSkus);
+      const lockedSkuValues = captureLockedSkuValues();
+      const lockedTypeValues = captureLockedTypeValues();
+      const oldLatestHistoryMonth = state.historyMonths.at(-1) || "";
+
+      state.sourceName = `${state.pendingRolloverName || "新销量"} / 滚动更新`;
+      state.rawRows = rows;
+      clearForecastAdjustmentsForRollover();
+      state.lockedTypes = oldLockedTypes;
+      state.lockedSkus = oldLockedSkus;
+      buildForecast(rows);
+
+      const rowBySku = new Map(state.rows.map((row) => [row.sku, row]));
+      let keptSkuCells = 0;
+      lockedSkuValues.forEach((entry, key) => {
+        const [sku, month] = key.split("|");
+        if (!rowBySku.has(sku) || !state.months.includes(month)) return;
+        state.adjustments.directUnits.set(key, entry.value);
+        if (entry.note) state.adjustments.notes.set(key, entry.note);
+        keptSkuCells += 1;
+      });
+
+      const types = new Set(state.rows.map((row) => row.type));
+      let keptTypeCells = 0;
+      lockedTypeValues.forEach((entry, key) => {
+        const { type, month } = parseTypeTargetKey(key);
+        if (!types.has(type) || !state.months.includes(month)) return;
+        state.adjustments.typeTargetOverride.set(key, entry.growth);
+        state.adjustments.typeTarget.set(key, clamp(1 + entry.growth, 0.3, 2));
+        keptTypeCells += 1;
+      });
+
+      const newLatestHistoryMonth = state.historyMonths.at(-1) || "";
+      state.rolloverLog = {
+        at: new Date().toISOString(),
+        previousHistoryMonth: oldLatestHistoryMonth,
+        latestHistoryMonth: newLatestHistoryMonth,
+        newForecastMonth: state.months.find((month) => !oldMonths.includes(month)) || state.months.at(-1) || "",
+        recomputedSkuCount: state.rows.length,
+        keptLockedSkuCount: oldLockedSkus.size,
+        keptLockedSkuCells: keptSkuCells,
+        keptFixedTypeCount: oldLockedTypes.size,
+        keptFixedTypeCells: keptTypeCells,
+        overwrittenManualCount: overwritten.total,
+      };
+      invalidateSummaryCache();
+      renderAll();
+      saveLocalDraftNow();
+      showToast("滚动更新完成，请复核锁定对象的新月份并手动保存云端。", "success");
+    } catch (error) {
+      showToast(error.message || "滚动更新失败。", "error");
+    } finally {
+      setLoading(false);
+      resolve();
+    }
+    }, 20);
+  });
 }
 
 function loadHistoricForecast(rows) {
@@ -2606,6 +3501,10 @@ function applyGlobalTargets() {
   monthsToApply.forEach((month) => {
     typeTargetSuggestionRows(month).forEach((row) => {
       const key = typeTargetKey(row.type, month);
+      if (state.lockedTypes.has(row.type)) {
+        skipped += 1;
+        return;
+      }
       if (state.adjustments.typeTargetOverride.has(key)) {
         skipped += 1;
         return;
@@ -2727,6 +3626,9 @@ function projectObject() {
       notes: Object.fromEntries(state.promoCalendar.notes),
     },
     historicForecast: Object.fromEntries(state.historicForecast),
+    lockedTypes: mapToPlainObject(state.lockedTypes),
+    lockedSkus: mapToPlainObject(state.lockedSkus),
+    rolloverLog: state.rolloverLog,
     pendingGlobalMonths: [...state.pendingGlobalMonths],
     pendingTargetCells: [...state.pendingTargetCells],
     adjustments: {
@@ -2752,13 +3654,21 @@ function loadProject(project) {
   state.filters.bulkSkuText = ui.filters?.bulkSkuText || "";
   state.filters.bulkTypeText = ui.filters?.bulkTypeText || "";
   state.filters.ownerText = ui.filters?.ownerText || "";
+  state.filters.skuLockStatus = ui.filters?.skuLockStatus || "all";
+  state.filters.typeLockStatus = ui.filters?.typeLockStatus || "all";
   state.selectedMonth = ui.selectedMonth || state.selectedMonth;
+  state.typeSummaryMonth = ui.typeSummaryMonth || state.typeSummaryMonth;
   state.selectedSku = ui.selectedSku || "";
   state.scope = ui.scope || state.scope;
   state.metric = ui.metric || state.metric;
   state.skuPageSize = Number(ui.skuPageSize) || state.skuPageSize;
   state.chartVisible = { ...state.chartVisible, ...(ui.chartVisible || {}) };
   state.editingSku = "";
+  state.lockedTypes = objectToMap(project.lockedTypes || {});
+  state.lockedSkus = objectToMap(project.lockedSkus || {});
+  state.selectedLockTypes = new Set();
+  state.selectedLockSkus = new Set();
+  state.rolloverLog = project.rolloverLog || null;
   state.pendingGlobalMonths = new Set(project.pendingGlobalMonths || []);
   state.pendingTargetCells = new Set(project.pendingTargetCells || []);
   state.si = applyOptimizedSiOverrides(project.si || DEFAULT_SI);
@@ -2919,7 +3829,17 @@ async function saveSkuInputPackageToCloud() {
   const mskuCount = state.rows.length;
   const activeCount = state.rows.filter((row) => row.activeMonths > 0).length;
   const warning = mskuCount < 1000 ? "\n\n注意：本次 MSKU 数量低于 1000，请确认当前不是测试包或旧缓存。" : "";
-  if (!confirm(`本次将保存 ${numberFmt.format(mskuCount)} 个 MSKU，其中有效 ${numberFmt.format(activeCount)} 个。\n保存后会覆盖 SKU 平台读取的最新输入包。${warning}\n\n是否继续保存？`)) {
+  const confirmed = await requestConfirmDialog({
+    title: "保存 SKU 输入包到云端",
+    lines: [
+      `本次将保存 ${numberFmt.format(mskuCount)} 个 MSKU，其中有效 ${numberFmt.format(activeCount)} 个。`,
+      "保存后会覆盖 SKU 平台读取的最新输入包。",
+      warning ? "注意：本次 MSKU 数量低于 1000，请确认当前不是测试包或旧缓存。" : "",
+    ],
+    confirmText: "确认保存",
+    danger: Boolean(warning),
+  });
+  if (!confirmed) {
     setCloudStatus("SKU输入包保存已取消。", "");
     return;
   }
@@ -2987,7 +3907,7 @@ function exportWorkbook(worksheets, fileName) {
 
 function exportDetailXlsx() {
   const headers = [
-    "SKU", "负责人", "价格", "Type", "Status",
+    "SKU", "负责人", "价格", "Type", "Status", "锁定状态", "锁定原因", "锁定备注", "锁定人", "锁定时间",
     ...state.historyMonths.map((month) => monthHeader(month, "历史")),
     ...state.months.flatMap((month) => [monthHeader(month, "预测销量"), monthHeader(month, "预估销售额")]),
   ];
@@ -2996,22 +3916,47 @@ function exportDetailXlsx() {
     if (diff) return diff;
     return getFinalUnits(b, state.selectedMonth) - getFinalUnits(a, state.selectedMonth);
   });
-  const rows = [headers, ...sortedRows.map((row) => [
-    row.sku,
-    row.owner || "",
-    row.price,
-    row.type,
-    row.status,
-    ...row.history.map((value) => Math.round(value || 0)),
-    ...state.months.flatMap((month) => {
-      const units = getFinalUnits(row, month);
-      return [units, Math.round(units * row.price)];
-    }),
-  ])];
+  const rows = [headers, ...sortedRows.map((row) => {
+    const lock = state.lockedSkus.get(row.sku);
+    return [
+      row.sku,
+      row.owner || "",
+      row.price,
+      row.type,
+      row.status,
+      lock ? "已锁定" : "未锁定",
+      lock?.reason || "",
+      lock?.note || "",
+      lock?.by || "",
+      lock?.at || "",
+      ...row.history.map((value) => Math.round(value || 0)),
+      ...state.months.flatMap((month) => {
+        const units = getFinalUnits(row, month);
+        return [units, Math.round(units * row.price)];
+      }),
+    ];
+  })];
+  const typeHeaders = ["Type", "固定状态", "固定原因", "固定备注", "固定人", "固定时间", ...state.months.map((month) => `${month} 目标涨幅%`)];
+  const typeRows = [typeHeaders, ...[...new Set(state.rows.map((row) => row.type))].sort((a, b) => a.localeCompare(b, "zh-CN")).map((type) => {
+    const lock = state.lockedTypes.get(type);
+    return [
+      type,
+      lock ? "已固定" : "未固定",
+      lock?.reason || "",
+      lock?.note || "",
+      lock?.by || "",
+      lock?.at || "",
+      ...state.months.map((month) => round(currentTypeGrowth(type, month) * 100, 1)),
+    ];
+  })];
   exportWorkbook([{
     name: "历史销量+最终预测",
     rows,
     widths: headers.map((header, index) => ({ wch: index === 0 ? 24 : Math.max(12, String(header).length + 2) })),
+  }, {
+    name: "Type固定状态",
+    rows: typeRows,
+    widths: typeHeaders.map((header, index) => ({ wch: index === 0 ? 28 : Math.max(12, String(header).length + 2) })),
   }], `历史销量+最终预测_${localDateStamp()}.xlsx`);
 }
 
@@ -3347,6 +4292,29 @@ els.baseFile.addEventListener("change", async (event) => {
   }
 });
 
+if (els.rolloverFile) els.rolloverFile.addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  setFileName(els.rolloverFileName, file);
+  state.pendingRolloverRows = null;
+  state.pendingRolloverName = "";
+  if (!file) return;
+  setLoading(true, file.size > 10 * 1024 * 1024 ? "新销量文件较大，正在解析..." : "正在解析新销量...");
+  try {
+    const data = await readDataFile(file);
+    if (Array.isArray(data)) state.pendingRolloverRows = data;
+    else if (data.kind === "workbook-template") state.pendingRolloverRows = data.baseRows || [];
+    else if (data.rawRows) state.pendingRolloverRows = data.rawRows;
+    if (!state.pendingRolloverRows?.length) throw new Error("新销量文件没有可识别的数据行。");
+    state.pendingRolloverName = file.name;
+    showToast("新销量已读取，点击“滚动更新”后生效。", "success");
+  } catch (error) {
+    state.pendingRolloverRows = null;
+    showToast(error.message || "新销量解析失败", "error");
+  } finally {
+    setLoading(false);
+  }
+});
+
 els.historicForecastFile.addEventListener("change", async (event) => {
   const file = event.target.files[0];
   setFileName(els.historicForecastFileName, file);
@@ -3401,6 +4369,20 @@ els.monthSelect.addEventListener("change", () => {
   state.selectedMonth = els.monthSelect.value;
   renderAll();
 });
+if (els.typeSummaryMonthSelect) els.typeSummaryMonthSelect.addEventListener("change", () => {
+  state.typeSummaryMonth = els.typeSummaryMonthSelect.value;
+  renderTypeTable();
+  scheduleLocalDraftSave();
+});
+if (els.lockSummaryCard) {
+  els.lockSummaryCard.addEventListener("click", showLockSummaryDialog);
+  els.lockSummaryCard.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      showLockSummaryDialog();
+    }
+  });
+}
 els.scopeSelect.addEventListener("change", () => {
   state.scope = els.scopeSelect.value;
   renderControls();
@@ -3449,6 +4431,26 @@ if (els.ownerFilterInput) {
     renderSharedAnalysis();
   });
 }
+if (els.skuLockFilter) {
+  els.skuLockFilter.addEventListener("change", () => {
+    state.filters.skuLockStatus = els.skuLockFilter.value || "all";
+    state.skuPage = 1;
+    renderSkuTable();
+    scheduleLocalDraftSave();
+  });
+}
+if (els.targetLockFilter) {
+  els.targetLockFilter.addEventListener("change", () => {
+    state.filters.typeLockStatus = els.targetLockFilter.value || "all";
+    renderTypeTargetPanel();
+    scheduleLocalDraftSave();
+  });
+}
+if (els.lockSelectedSkus) els.lockSelectedSkus.addEventListener("click", () => lockSkus([...state.selectedLockSkus]));
+if (els.unlockSelectedSkus) els.unlockSelectedSkus.addEventListener("click", () => unlockSkus([...state.selectedLockSkus]));
+if (els.lockSelectedTypes) els.lockSelectedTypes.addEventListener("click", () => lockTypes([...state.selectedLockTypes]));
+if (els.unlockSelectedTypes) els.unlockSelectedTypes.addEventListener("click", () => unlockTypes([...state.selectedLockTypes]));
+if (els.runRolloverUpdate) els.runRolloverUpdate.addEventListener("click", () => withButtonLoading(els.runRolloverUpdate, "更新中...", async () => runRolloverUpdate()));
 els.clearBulkFilter.addEventListener("click", () => {
   state.filters.bulkSkuText = "";
   state.filters.bulkTypeText = "";
@@ -3533,11 +4535,21 @@ els.clearManual.addEventListener("click", () => {
   saveLocalDraftNow();
   showToast("当前 SKU 当前月直改已清空并保存。", "success");
 });
-els.clearMonthManual.addEventListener("click", () => {
+els.clearMonthManual.addEventListener("click", async () => {
   const suffix = `|${state.selectedMonth}`;
   const keys = [...state.adjustments.directUnits.keys()].filter((key) => key.endsWith(suffix));
   if (!keys.length) return;
-  if (!confirm(`确认清空 ${state.selectedMonth} 所有 SKU 的直改值吗？可用 Ctrl+Z 撤销。`)) return;
+  const confirmed = await requestConfirmDialog({
+    title: "清空本月全部直改",
+    lines: [
+      `将清空 ${state.selectedMonth} 所有 SKU 的直改值。`,
+      `影响 ${numberFmt.format(keys.length)} 个直改单元格。`,
+      "可通过 Ctrl+Z 撤销本次操作。",
+    ],
+    confirmText: "确认清空",
+    danger: true,
+  });
+  if (!confirmed) return;
   pushHistory("清空本月全部直改");
   keys.forEach((key) => {
     if (key.endsWith(suffix)) {
